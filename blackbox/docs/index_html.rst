@@ -18,6 +18,7 @@ Contents
 
    architecture/index
    installation
+   migrating
    configuration
    cli
    hello

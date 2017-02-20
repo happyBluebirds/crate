@@ -95,6 +95,8 @@ table has many partitions this should be avoided due to performance reasons.
   DROP OK, 1 row affected (... sec)
 
 
+.. _segments_upgrade:
+
 Segments Upgrade
 ================
 
