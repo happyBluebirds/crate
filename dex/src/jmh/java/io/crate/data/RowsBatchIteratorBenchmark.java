@@ -70,6 +70,14 @@ public class RowsBatchIteratorBenchmark {
 
     private BatchIterator itCloseAsserting = new CloseAssertingBatchIterator(it);
     private BatchIterator skippingIt = new SkippingBatchIterator(it, 100);
+    private BatchIterator filteringIt = new FilteringBatchIterator(it, columns -> new BooleanSupplier() {
+        Input<?> col0 = columns.get(0);
+
+        @Override
+        public boolean getAsBoolean() {
+            return ((Long) col0.value()) % 10 == 0;
+        }
+    });
 
     @Benchmark
     public void measureConsumeBatchIterator(Blackhole blackhole) throws Exception {
@@ -107,6 +115,14 @@ public class RowsBatchIteratorBenchmark {
     public void measureConsumeNestedLoopLeftJoin(Blackhole blackhole) throws Exception {
         final Input<?> input = leftJoin.rowData().get(0);
         while (leftJoin.moveNext()) {
+            blackhole.consume(input.value());
+        }
+    }
+
+    @Benchmark
+    public void measureConsumeFilteringBI(Blackhole blackhole) throws Exception {
+        Input<?> input = filteringIt.rowData().get(0);
+        while (filteringIt.moveNext()) {
             blackhole.consume(input.value());
         }
     }
