@@ -15,5 +15,6 @@ Release Lines
     :maxdepth: 1
 
     1.1/index
+    1.0/index
 
 .. _`back up your data`: https://crate.io/a/backing-up-and-restoring-crate/
