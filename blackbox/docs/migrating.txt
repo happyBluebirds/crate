@@ -107,7 +107,7 @@ Open your CrateDB `admin console`_ and verify that your cluster checks are
 green. This indicates that all tables have been migrated.
 
 If your cluster checks are not green, you may have missed some tables. Please
-go back to the `Preparation`_ section.
+go back to the the start.
 
 Create New Snapshots
 --------------------
