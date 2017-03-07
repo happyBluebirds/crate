@@ -2,7 +2,7 @@
 Contributing
 ============
 
-Thank you for considering to make a contribution.
+Thank you for your interest in contributing.
 
 This document is a guideline. Don't worry too much about getting everything
 perfect. We are more than happy to work with you on your contribution.
