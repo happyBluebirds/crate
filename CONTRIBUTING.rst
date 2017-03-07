@@ -27,7 +27,7 @@ When reporting a new issue, include as much detail as possible. For example:
 
 - Say which OS you're using
 
-- Say wjich version of CrateDB you are running
+- Say which version of CrateDB you are running
 
 - Include logs or stacktraces
 
