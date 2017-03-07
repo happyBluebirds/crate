@@ -17,6 +17,7 @@ Contents
    :maxdepth: 2
 
    architecture/index
+   release_notes/index
    installation
    migrating
    configuration
@@ -30,3 +31,4 @@ Contents
    best_practice/index
    protocols/index
    enterprise/index
+

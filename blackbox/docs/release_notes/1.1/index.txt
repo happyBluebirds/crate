@@ -1,16 +1,22 @@
 .. highlight:: psql
 
-=========
-Migrating
-=========
-
-Some versions of CrateDB require version-specific migration steps.
-
-Please see the section that corresponds to the version you are migrating to for
-instructions.
-
-Migrating to 1.1
 ================
+1.1 Release Line
+================
+
+Versions
+========
+
+.. toctree::
+    :maxdepth: 1
+
+    unreleased
+
+Upgrade Notes
+=============
+
+New Cluster Checks
+------------------
 
 CrateDB 1.1 introduces a new internal table format that is backwards
 incompatible with previous table formats. Future versions of CrateDB will only
@@ -29,7 +35,7 @@ for more information.
 Depending on your situation, you may then be told that you should either
 upgrade or recreate some of your tables.
 
-.. figure:: _static/upgrade-cluster-checks.png
+.. figure:: ../../_static/upgrade-cluster-checks.png
    :align: center
 
    *Figure 1*: Both cluster checks are failing in this example.
@@ -38,7 +44,7 @@ If your cluster checks are green, there is nothing for you to do. Otherwise,
 continue reading.
 
 Recreate Tables
----------------
+```````````````
 
 For tables that need recreating, use :ref:`ref-show-create-table` to get the
 SQL statement needed to restore the table, like so::
@@ -87,7 +93,7 @@ If you have tables you need to upgrade, continue to the `Upgrade Tables`_
 section. Otherwise, skip to the `Verify Migration`_ section.
 
 Upgrade Tables
---------------
+``````````````
 
 For tables that need upgrading, use the ``OPTIMIZE`` command (see
 :ref:`segments_upgrade`).
@@ -101,7 +107,7 @@ Here, replace ``table_ident`` with the name of the table you are upgrading.
 Once you have done this for all tables, you can move on.
 
 Verify Migration
-----------------
+````````````````
 
 Open your CrateDB `admin console`_ and verify that your cluster checks are
 green. This indicates that all tables have been migrated.
@@ -110,7 +116,7 @@ If your cluster checks are not green, you may have missed some tables. Please
 go back to the the start.
 
 Create New Snapshots
---------------------
+````````````````````
 
 Snapshots of your tables created prior to them being migrated will not work
 with future versions of CrateDB. For this reason, you should create a new
