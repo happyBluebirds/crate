@@ -69,7 +69,8 @@ Once you're up and running, head on over to `the introductory docs`_.
 Contributing
 ============
 
-CrateDB is primarily maintained by `Crate.io`_, but we welcome community contributions!
+This project is primarily maintained by `Crate.io`_, but we welcome community
+contributions!
 
 See the `developer docs`_ and the `contribution docs`_ for more information.
 
@@ -78,17 +79,17 @@ Help
 
 Looking for more help?
 
-- Read `the CrateDB documentation`_
+- Read `the project documentation`_
 - Check `StackOverflow`_ for common problems
 - Chat with us on `Slack`_
 - Get `paid support`_
 
-.. _getting started: https://crate.io/docs/getting-started
-.. _the introductory docs: https://crate.io/docs/stable/hello.html
-.. _developer docs: DEVELOP.rst
 .. _contribution docs: CONTRIBUTING.rst
 .. _Crate.io: http://crate.io/
-.. _StackOverflow: https://stackoverflow.com/tags/crate
-.. _Slack: https://crate.io/docs/support/slackin/
-.. _the CrateDB documentation: https://crate.io/docs/
+.. _developer docs: DEVELOP.rst
+.. _getting started: https://crate.io/docs/getting-started
 .. _paid support: https://crate.io/pricing/
+.. _Slack: https://crate.io/docs/support/slackin/
+.. _StackOverflow: https://stackoverflow.com/tags/crate
+.. _the introductory docs: https://crate.io/docs/stable/hello.html
+.. _the project documentation: https://crate.io/docs/
