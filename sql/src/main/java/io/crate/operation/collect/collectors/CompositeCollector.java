@@ -25,7 +25,6 @@ package io.crate.operation.collect.collectors;
 import io.crate.data.BatchConsumer;
 import io.crate.data.BatchIterator;
 import io.crate.data.CompositeBatchIterator;
-import io.crate.data.Killable;
 import io.crate.operation.collect.CrateCollector;
 
 import javax.annotation.Nullable;
@@ -77,13 +76,13 @@ public class CompositeCollector implements CrateCollector {
 
     private final List<CrateCollector> collectors;
 
-    public CompositeCollector(Collection<? extends Builder> builders, BatchConsumer finalConsumer, Killable killable) {
+    public CompositeCollector(Collection<? extends Builder> builders, BatchConsumer finalConsumer) {
         assert builders.size() > 1 : "CompositeCollector must not be called with less than 2 collectors";
 
         collectors = new ArrayList<>(builders.size());
         MultiConsumer multiConsumer = new MultiConsumer(builders.size(), finalConsumer);
         for (Builder builder : builders) {
-            collectors.add(builder.build(multiConsumer, killable));
+            collectors.add(builder.build(multiConsumer));
         }
     }
 

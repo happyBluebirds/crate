@@ -64,8 +64,6 @@ public class DistributingConsumerTest {
             1,
             "dummy",
             collectingConsumer,
-            failure -> {
-            },
             PassThroughPagingIterator.oneShot(),
             streamers,
             new RamAccountingContext("dummy", new NoopCircuitBreaker("dummy")),

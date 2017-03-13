@@ -33,37 +33,33 @@ public final class RowsCollector {
     public static CrateCollector empty(RowReceiver rowDownstream) {
         return BatchIteratorCollectorBridge.newInstance(
             RowsBatchIterator.empty(),
-            new BatchConsumerToRowReceiver(rowDownstream),
-            rowDownstream);
+            new BatchConsumerToRowReceiver(rowDownstream));
     }
 
     public static CrateCollector single(Row row, RowReceiver rowDownstream) {
         return BatchIteratorCollectorBridge.newInstance(
             RowsBatchIterator.newInstance(Collections.singletonList(row), row.numColumns()),
-            new BatchConsumerToRowReceiver(rowDownstream),
-            rowDownstream);
+            new BatchConsumerToRowReceiver(rowDownstream));
     }
 
     public static CrateCollector forRows(Iterable<Row> rows, int numCols, RowReceiver rowReceiver) {
         return BatchIteratorCollectorBridge.newInstance(
             RowsBatchIterator.newInstance(rows, numCols),
-            new BatchConsumerToRowReceiver(rowReceiver),
-            rowReceiver);
+            new BatchConsumerToRowReceiver(rowReceiver)
+        );
     }
 
     static CrateCollector.Builder emptyBuilder() {
-        return (consumer, killable) -> BatchIteratorCollectorBridge.newInstance(
+        return consumer -> BatchIteratorCollectorBridge.newInstance(
             RowsBatchIterator.empty(),
-            consumer,
-            killable
+            consumer
         );
     }
 
     public static CrateCollector.Builder builder(final Iterable<Row> rows, int numCols) {
-        return (batchConsumer, killable) -> BatchIteratorCollectorBridge.newInstance(
+        return batchConsumer -> BatchIteratorCollectorBridge.newInstance(
             RowsBatchIterator.newInstance(rows, numCols),
-            batchConsumer,
-            killable
+            batchConsumer
         );
     }
 }

@@ -28,7 +28,7 @@ import io.crate.Streamer;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.data.BatchConsumer;
 import io.crate.data.Bucket;
-import io.crate.data.Killable;
+import io.crate.data.KillableBatchIterator;
 import io.crate.data.Row;
 import io.crate.operation.PageResultListener;
 import io.crate.operation.merge.BatchPagingIterator;
@@ -49,7 +49,6 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
     private final Object lock = new Object();
     private final String nodeName;
     private final boolean traceEnabled;
-    private final Killable killable;
     private final Streamer<?>[] streamers;
     private final RamAccountingContext ramAccountingContext;
     private final int numBuckets;
@@ -59,6 +58,7 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
     private final IntObjectHashMap<Bucket> bucketsByIdx;
     private final BatchConsumer consumer;
     private final BatchPagingIterator<Integer> batchPagingIterator;
+    private final KillableBatchIterator batchIterator;
 
     private Throwable lastThrowable = null;
     private volatile boolean receivingFirstPage = true;
@@ -68,7 +68,6 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
                                  int id,
                                  String name,
                                  BatchConsumer batchConsumer,
-                                 Killable killable,
                                  PagingIterator<Integer, Row> pagingIterator,
                                  Streamer<?>[] streamers,
                                  RamAccountingContext ramAccountingContext,
@@ -76,7 +75,6 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
         super(id, logger);
         this.nodeName = nodeName;
         this.name = name;
-        this.killable = killable;
         this.streamers = streamers;
         this.ramAccountingContext = ramAccountingContext;
         this.numBuckets = numBuckets;
@@ -92,6 +90,7 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
             () -> releaseListenersAndCloseContext(null),
             streamers.length
         );
+        this.batchIterator = new KillableBatchIterator(batchPagingIterator);
         this.consumer = batchConsumer;
     }
 
@@ -116,7 +115,7 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
             traceLog("method=setBucket", bucketIdx);
 
             if (bucketsByIdx.putIfAbsent(bucketIdx, rows) == false) {
-                killable.kill(new IllegalStateException(String.format(Locale.ENGLISH,
+                kill(new IllegalStateException(String.format(Locale.ENGLISH,
                     "Same bucket of a page set more than once. node=%s method=setBucket phaseId=%d bucket=%d",
                     nodeName, id, bucketIdx)));
                 return;
@@ -134,7 +133,7 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
     private void triggerConsumer() {
         if (receivingFirstPage) {
             receivingFirstPage = false;
-            consumer.accept(batchPagingIterator, lastThrowable);
+            consumer.accept(batchIterator, lastThrowable);
         } else {
             batchPagingIterator.completeLoad(lastThrowable);
         }
@@ -210,7 +209,7 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
         traceLog("method=failure", bucketIdx, throwable);
         synchronized (lock) {
             if (bucketsByIdx.putIfAbsent(bucketIdx, Bucket.EMPTY) == false) {
-                killable.kill(new IllegalStateException(String.format(Locale.ENGLISH,
+                kill(new IllegalStateException(String.format(Locale.ENGLISH,
                     "Same bucket of a page set more than once. node=%s method=failure phaseId=%d bucket=%d",
                     nodeName, id(), bucketIdx)));
                 return;
@@ -266,8 +265,11 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
     @Override
     protected void innerKill(@Nonnull Throwable t) {
         lastThrowable = t;
-        batchPagingIterator.close();
-        killable.kill(t);
+        batchIterator.kill(t);
+        if (receivingFirstPage) {
+            receivingFirstPage = true;
+            consumer.accept(null, t);
+        }
     }
 
     @Override
@@ -282,7 +284,7 @@ public class PageDownstreamContext extends AbstractExecutionSubContext implement
         // there won't be any executionNodes for that collectPhase
         // -> no upstreams -> just finish
         if (numBuckets == 0) {
-            consumer.accept(batchPagingIterator, lastThrowable);
+            consumer.accept(batchIterator, lastThrowable);
         }
     }
 
