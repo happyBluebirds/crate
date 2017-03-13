@@ -21,30 +21,24 @@
 
 package io.crate.executor.transport.distributed;
 
-import com.google.common.base.Throwables;
 import io.crate.Streamer;
+import io.crate.concurrent.CompletionListenable;
 import io.crate.data.BatchConsumer;
+import io.crate.data.BatchIterator;
 import io.crate.data.BatchRowVisitor;
 import io.crate.data.Bucket;
-import io.crate.data.Row;
-import io.crate.executor.transport.StreamBucket;
 import io.crate.executor.transport.StreamBucketCollector;
-import io.crate.operation.projectors.*;
 
 import javax.annotation.Nullable;
-import java.io.IOException;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 
-public class SingleBucketBuilder implements RowReceiver {
+public class SingleBucketBuilder implements BatchConsumer, CompletionListenable {
 
-    private final StreamBucket.Builder bucketBuilder;
     private final Streamer<?>[] streamers;
     private final CompletableFuture<Bucket> bucketFuture = new CompletableFuture<>();
 
     public SingleBucketBuilder(Streamer<?>[] streamers) {
-        bucketBuilder = new StreamBucket.Builder(streamers);
         this.streamers = streamers;
     }
 
@@ -54,57 +48,21 @@ public class SingleBucketBuilder implements RowReceiver {
     }
 
     @Override
-    public Result setNextRow(Row row) {
-        try {
-            bucketBuilder.add(row);
-        } catch (Throwable e) {
-            Throwables.propagate(e);
-        }
-        return Result.CONTINUE;
-    }
-
-    @Override
-    public void pauseProcessed(ResumeHandle resumeable) {
-    }
-
-    @Override
-    public void finish(RepeatHandle repeatHandle) {
-        try {
-            bucketFuture.complete(bucketBuilder.build());
-        } catch (IOException e) {
-            bucketFuture.completeExceptionally(e);
-        }
-    }
-
-    @Override
-    public void fail(Throwable throwable) {
-        bucketFuture.completeExceptionally(throwable);
-    }
-
-    @Override
     public void kill(Throwable throwable) {
         bucketFuture.completeExceptionally(throwable);
     }
 
     @Override
-    public Set<Requirement> requirements() {
-        return Requirements.NO_REQUIREMENTS;
-    }
-
-    @Nullable
-    @Override
-    public BatchConsumer asConsumer() {
-        return (it, t) -> {
-            if (t == null) {
-                bucketFuture.whenComplete((ignored, failure) -> it.close());
-                StreamBucketCollector streamBucketCollector = new StreamBucketCollector(streamers);
-                BatchRowVisitor.visitRows(it, streamBucketCollector.supplier().get(), streamBucketCollector, bucketFuture);
-            } else {
-                if (it != null) {
-                    it.close();
-                }
-                bucketFuture.completeExceptionally(t);
+    public void accept(BatchIterator it, @Nullable Throwable t) {
+        if (t == null) {
+            bucketFuture.whenComplete((ignored, failure) -> it.close());
+            StreamBucketCollector streamBucketCollector = new StreamBucketCollector(streamers);
+            BatchRowVisitor.visitRows(it, streamBucketCollector.supplier().get(), streamBucketCollector, bucketFuture);
+        } else {
+            if (it != null) {
+                it.close();
             }
-        };
+            bucketFuture.completeExceptionally(t);
+        }
     }
 }

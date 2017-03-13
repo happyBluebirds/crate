@@ -41,6 +41,7 @@ import io.crate.metadata.TransactionContext;
 import io.crate.operation.collect.CrateCollector;
 import io.crate.operation.collect.JobCollectContext;
 import io.crate.operation.collect.MapSideDataCollectOperation;
+import io.crate.operation.projectors.BatchConsumerToRowReceiver;
 import io.crate.operation.projectors.RowReceiver;
 import io.crate.planner.Plan;
 import io.crate.planner.Planner;
@@ -95,7 +96,7 @@ public class LuceneDocCollectorProvider implements AutoCloseable {
         JobExecutionContext.Builder builder = jobContextService.newBuilder(collectPhase.jobId());
         JobCollectContext jobCollectContext = new JobCollectContext(
             collectPhase, collectOperation, cluster.clusterService().state().nodes().getLocalNodeId(),
-            RAM_ACCOUNTING_CONTEXT, downstream, sharedShardContexts);
+            RAM_ACCOUNTING_CONTEXT, new BatchConsumerToRowReceiver(downstream), sharedShardContexts);
         collectContexts.add(jobCollectContext);
         builder.addSubContext(jobCollectContext);
         jobContextService.createContext(builder);

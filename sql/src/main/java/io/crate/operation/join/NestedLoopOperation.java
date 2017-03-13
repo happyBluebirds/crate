@@ -24,6 +24,7 @@ package io.crate.operation.join;
 import io.crate.concurrent.CompletionListenable;
 import io.crate.data.*;
 import io.crate.data.join.NestedLoopBatchIterator;
+import io.crate.exceptions.JobKilledException;
 import io.crate.planner.node.dql.join.JoinType;
 
 import javax.annotation.Nullable;
@@ -100,6 +101,12 @@ public class NestedLoopOperation implements CompletionListenable {
 
     private BatchConsumer getBatchConsumer(CompletableFuture<BatchIterator> future, boolean requiresRepeat) {
         return new BatchConsumer() {
+            @Override
+            public void kill(@Nullable Throwable throwable) {
+                throwable = throwable == null ? new InterruptedException(JobKilledException.MESSAGE) : throwable;
+                future.completeExceptionally(throwable);
+            }
+
             @Override
             public void accept(BatchIterator iterator, @Nullable Throwable failure) {
                 if (failure == null) {

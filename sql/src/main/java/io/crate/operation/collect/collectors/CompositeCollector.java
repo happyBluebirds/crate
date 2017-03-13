@@ -25,7 +25,6 @@ package io.crate.operation.collect.collectors;
 import io.crate.data.BatchConsumer;
 import io.crate.data.BatchIterator;
 import io.crate.data.CompositeBatchIterator;
-import io.crate.data.Killable;
 import io.crate.operation.collect.CrateCollector;
 
 import javax.annotation.Nullable;
@@ -85,21 +84,19 @@ public class CompositeCollector implements CrateCollector {
     }
 
     public static CompositeCollector syncCompositeCollector(Collection<? extends Builder> builders,
-                                                            BatchConsumer consumer,
-                                                            Killable killable) {
+                                                            BatchConsumer consumer) {
         return new CompositeCollector(
             builders,
-            new MultiConsumer(builders.size(), consumer, CompositeBatchIterator::new),
-            killable
+            new MultiConsumer(builders.size(), consumer, CompositeBatchIterator::new)
         );
     }
 
-    private CompositeCollector(Collection<? extends Builder> builders, MultiConsumer multiConsumer, Killable killable) {
+    private CompositeCollector(Collection<? extends Builder> builders, MultiConsumer multiConsumer) {
         assert builders.size() > 1 : "CompositeCollector must not be called with less than 2 collectors";
 
         collectors = new ArrayList<>(builders.size());
         for (Builder builder : builders) {
-            collectors.add(builder.build(multiConsumer, killable));
+            collectors.add(builder.build(multiConsumer));
         }
     }
 
@@ -147,6 +144,11 @@ public class CompositeCollector implements CrateCollector {
             if (remaining == 0) {
                 consumer.accept(compositeBatchIteratorFactory.apply(iterators), lastFailure);
             }
+        }
+
+        @Override
+        public void kill(@Nullable Throwable throwable) {
+            consumer.kill(throwable);
         }
     }
 }

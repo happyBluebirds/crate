@@ -26,12 +26,12 @@ import com.google.common.collect.ImmutableSet;
 import io.crate.analyze.WhereClause;
 import io.crate.analyze.symbol.Symbol;
 import io.crate.core.collections.TreeMapBuilder;
+import io.crate.data.BatchConsumer;
 import io.crate.metadata.Routing;
 import io.crate.metadata.RowGranularity;
 import io.crate.operation.NodeOperation;
 import io.crate.operation.Paging;
 import io.crate.operation.projectors.DistributingDownstreamFactory;
-import io.crate.operation.projectors.RowReceiver;
 import io.crate.planner.distribution.DistributionInfo;
 import io.crate.planner.node.dql.MergePhase;
 import io.crate.planner.node.dql.RoutedCollectPhase;
@@ -62,7 +62,7 @@ public class DistributingDownstreamFactoryTest extends CrateUnitTest {
         );
     }
 
-    private RowReceiver createDownstream(Set<String> downstreamExecutionNodes) {
+    private BatchConsumer createDownstream(Set<String> downstreamExecutionNodes) {
         UUID jobId = UUID.randomUUID();
         Routing routing = new Routing(
             TreeMapBuilder.<String, Map<String, List<Integer>>>newMapBuilder()
@@ -97,14 +97,14 @@ public class DistributingDownstreamFactoryTest extends CrateUnitTest {
 
     @Test
     public void testCreateDownstreamOneNode() throws Exception {
-        RowReceiver downstream = createDownstream(ImmutableSet.of("downstream_node"));
+        BatchConsumer downstream = createDownstream(ImmutableSet.of("downstream_node"));
         assertThat(downstream, instanceOf(DistributingDownstream.class));
         assertThat(((DistributingDownstream) downstream).multiBucketBuilder, instanceOf(BroadcastingBucketBuilder.class));
     }
 
     @Test
     public void testCreateDownstreamMultipleNode() throws Exception {
-        RowReceiver downstream = createDownstream(ImmutableSet.of("downstream_node1", "downstream_node2"));
+        BatchConsumer downstream = createDownstream(ImmutableSet.of("downstream_node1", "downstream_node2"));
         assertThat(((DistributingDownstream) downstream).multiBucketBuilder, instanceOf(ModuloBucketBuilder.class));
     }
 }

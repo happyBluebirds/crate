@@ -223,6 +223,11 @@ public class DistributingConsumer implements BatchConsumer {
         }
     }
 
+    @Override
+    public void kill(@Nullable Throwable throwable) {
+        // FIXME:
+    }
+
     private static class Downstream {
 
         private final String nodeId;

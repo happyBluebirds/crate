@@ -76,7 +76,7 @@ cu -> u: cleanup();
 @enduml
  */
 
-public interface BatchConsumer extends BiConsumer<BatchIterator, Throwable> {
+public interface BatchConsumer extends BiConsumer<BatchIterator, Throwable>, Killable {
 
     /**
      * Start consumption of the given {@link BatchIterator}.

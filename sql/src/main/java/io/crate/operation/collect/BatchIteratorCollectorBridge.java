@@ -24,7 +24,6 @@ package io.crate.operation.collect;
 
 import io.crate.data.BatchConsumer;
 import io.crate.data.BatchIterator;
-import io.crate.data.Killable;
 
 import javax.annotation.Nullable;
 import java.util.concurrent.CompletableFuture;
@@ -36,26 +35,23 @@ import java.util.function.Supplier;
  */
 public final class BatchIteratorCollectorBridge {
 
-    public static CrateCollector newInstance(BatchIterator batchIterator, BatchConsumer consumer, Killable killable) {
-        return new SyncBatchItCollector(batchIterator, consumer, killable);
+    public static CrateCollector newInstance(BatchIterator batchIterator, BatchConsumer consumer) {
+        return new SyncBatchItCollector(batchIterator, consumer);
     }
 
     public static CrateCollector newInstance(Supplier<CompletableFuture<BatchIterator>> batchIteratorFuture,
-                                             BatchConsumer consumer,
-                                             Killable killable) {
-        return new AsyncBatchItCollector(batchIteratorFuture, consumer, killable);
+                                             BatchConsumer consumer) {
+        return new AsyncBatchItCollector(batchIteratorFuture, consumer);
     }
 
     private static class SyncBatchItCollector implements CrateCollector {
 
         private final BatchIterator batchIterator;
-        private final Killable killable;
         private final BatchConsumer consumer;
 
-        SyncBatchItCollector(BatchIterator batchIterator, BatchConsumer consumer, Killable killable) {
+        SyncBatchItCollector(BatchIterator batchIterator, BatchConsumer consumer) {
             this.batchIterator = batchIterator;
             this.consumer = consumer;
-            this.killable = killable;
         }
 
         @Override
@@ -65,7 +61,7 @@ public final class BatchIteratorCollectorBridge {
 
         @Override
         public void kill(@Nullable Throwable throwable) {
-            killable.kill(throwable);
+            consumer.kill(throwable);
         }
     }
 
@@ -73,14 +69,11 @@ public final class BatchIteratorCollectorBridge {
 
         private final Supplier<CompletableFuture<BatchIterator>> batchIteratorFuture;
         private final BatchConsumer consumer;
-        private final Killable killable;
 
         AsyncBatchItCollector(Supplier<CompletableFuture<BatchIterator>> batchIteratorFuture,
-                              BatchConsumer consumer,
-                              Killable killable) {
+                              BatchConsumer consumer) {
             this.batchIteratorFuture = batchIteratorFuture;
             this.consumer = consumer;
-            this.killable = killable;
         }
 
         @Override
@@ -90,7 +83,7 @@ public final class BatchIteratorCollectorBridge {
 
         @Override
         public void kill(@Nullable Throwable throwable) {
-            killable.kill(throwable);
+            consumer.kill(throwable);
         }
     }
 }

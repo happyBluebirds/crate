@@ -57,7 +57,7 @@ public class ProjectingBatchConsumer implements BatchConsumer {
         return new ProjectingBatchConsumer(lastConsumer, projections, jobId, ramAccountingContext, projectorFactory);
     }
 
-    public ProjectingBatchConsumer(BatchConsumer consumer,
+    private ProjectingBatchConsumer(BatchConsumer consumer,
                                    Collection<? extends Projection> projections,
                                    UUID jobId,
                                    RamAccountingContext ramAccountingContext,
@@ -84,5 +84,10 @@ public class ProjectingBatchConsumer implements BatchConsumer {
         } else {
             consumer.accept(iterator, failure);
         }
+    }
+
+    @Override
+    public void kill(@Nullable Throwable throwable) {
+        consumer.kill(throwable);
     }
 }
