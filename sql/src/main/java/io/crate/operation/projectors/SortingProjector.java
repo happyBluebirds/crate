@@ -21,100 +21,37 @@
 
 package io.crate.operation.projectors;
 
-import com.google.common.base.Preconditions;
 import io.crate.data.*;
 import io.crate.operation.collect.CollectExpression;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
-/**
- * Sort rows by ordering criteria and process given offset before emitting.
- * <p>
- * Compared to {@link SortingTopNProjector} this projector does not support limiting,
- * while the {@link SortingTopNProjector} does not work WITHOUT a limit.
- */
-class SortingProjector extends AbstractProjector {
+final class SortingProjector {
 
-    private final Collection<? extends Input<?>> inputs;
-    private final Iterable<? extends CollectExpression<Row, ?>> collectExpressions;
-    private Set<Requirement> requirements;
+    public static BatchIterator create(BatchIterator batchIterator,
+                                       Collection<? extends Input<?>> inputs,
+                                       Iterable<? extends CollectExpression<Row, ?>> expressions,
+                                       int numOutputs,
+                                       Comparator<Object[]> comparator,
+                                       int offset) {
 
-    private final Comparator<Object[]> comparator;
-    private final int offset;
-    private final int numOutputs;
-    private final List<Object[]> rows = new ArrayList<>();
-    private IterableRowEmitter rowEmitter = null;
-
-    /**
-     * @param inputs             contains output {@link Input}s and orderBy {@link Input}s
-     * @param collectExpressions gathered from outputs and orderBy inputs
-     * @param numOutputs         <code>inputs</code> contains this much output {@link Input}s starting form index 0
-     * @param comparator         ordering that is used to compare the rows
-     * @param offset             the initial offset, this number of rows are skipped
-     */
-    SortingProjector(Collection<? extends Input<?>> inputs,
-                     Iterable<? extends CollectExpression<Row, ?>> collectExpressions,
-                     int numOutputs,
-                     Comparator<Object[]> comparator,
-                     int offset) {
-        Preconditions.checkArgument(offset >= 0, "invalid offset %s", offset);
-        this.numOutputs = numOutputs;
-        this.inputs = inputs;
-        this.collectExpressions = collectExpressions;
-        this.comparator = comparator;
-        this.offset = offset;
+        Collector<Row, ?, Bucket> collector = Collectors.mapping(
+            row -> getCells(row, inputs, expressions),
+            Collectors.collectingAndThen(
+                Collectors.toList(),
+                rows -> sortAndCreateBucket(rows, comparator, numOutputs, offset))
+        );
+        return CollectingBatchIterator.newInstance(batchIterator, collector, numOutputs);
     }
 
-    @Override
-    public Result setNextRow(Row row) {
-        Object[] newRow = getCells(row);
-        rows.add(newRow);
-        return Result.CONTINUE;
-    }
-
-    @Override
-    public void finish(RepeatHandle repeatHandle) {
-        rowEmitter = new IterableRowEmitter(downstream, sortAndCreateBucket(rows));
-        rowEmitter.run();
-    }
-
-    @Override
-    public void kill(Throwable throwable) {
-        IterableRowEmitter emitter = rowEmitter;
-        if (emitter == null) {
-            downstream.kill(throwable);
-        } else {
-            emitter.kill(throwable);
-        }
-    }
-
-    @Override
-    public void fail(Throwable t) {
-        downstream.fail(t);
-    }
-
-    @Override
-    public Set<Requirement> requirements() {
-        if (requirements == null) {
-            requirements = Requirements.remove(downstream.requirements(), Requirement.REPEAT);
-        }
-        return requirements;
-    }
-
-    @Override
-    public BatchIteratorProjector asProjector() {
-        return bi -> {
-            Collector<Row, ?, Bucket> collector = Collectors.mapping(
-                this::getCells,
-                Collectors.collectingAndThen(Collectors.toList(), this::sortAndCreateBucket));
-            return CollectingBatchIterator.newInstance(bi, collector, numOutputs);
-        };
-    }
-
-    private Object[] getCells(Row row) {
-        for (CollectExpression<Row, ?> collectExpression : collectExpressions) {
+    private static Object[] getCells(Row row,
+                              Collection<? extends Input<?>> inputs,
+                              Iterable<? extends CollectExpression<Row, ?>> expressions) {
+        for (CollectExpression<Row, ?> collectExpression : expressions) {
             collectExpression.setNextRow(row);
         }
         Object[] newRow = new Object[inputs.size()];
@@ -125,7 +62,7 @@ class SortingProjector extends AbstractProjector {
         return newRow;
     }
 
-    private Bucket sortAndCreateBucket(List<Object[]> rows) {
+    private static Bucket sortAndCreateBucket(List<Object[]> rows, Comparator<Object[]> comparator, int numOutputs, int offset) {
         rows.sort(comparator.reversed());
         if (offset == 0) {
             return new CollectionBucket(rows, numOutputs);

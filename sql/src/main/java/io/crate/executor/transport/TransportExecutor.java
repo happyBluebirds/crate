@@ -27,6 +27,7 @@ import io.crate.action.sql.DDLStatementDispatcher;
 import io.crate.action.sql.ShowStatementDispatcher;
 import io.crate.analyze.EvaluatingNormalizer;
 import io.crate.analyze.symbol.SelectSymbol;
+import io.crate.data.BatchConsumer;
 import io.crate.data.Row;
 import io.crate.executor.Executor;
 import io.crate.executor.Task;
@@ -45,7 +46,6 @@ import io.crate.operation.NodeOperation;
 import io.crate.operation.NodeOperationTree;
 import io.crate.operation.collect.sources.SystemCollectSource;
 import io.crate.operation.projectors.ProjectionToProjectorVisitor;
-import io.crate.operation.projectors.RowReceiver;
 import io.crate.planner.*;
 import io.crate.planner.distribution.DistributionType;
 import io.crate.planner.distribution.UpstreamPhase;
@@ -141,11 +141,11 @@ public class TransportExecutor implements Executor {
     }
 
     @Override
-    public void execute(Plan plan, RowReceiver rowReceiver, Row parameters) {
+    public void execute(Plan plan, BatchConsumer consumer, Row parameters) {
         CompletableFuture<Plan> planFuture = multiPhaseExecutor.process(plan, null);
         planFuture
-            .thenAccept(p -> plan2TaskVisitor.process(p, null).execute(rowReceiver, parameters))
-            .exceptionally(t -> { rowReceiver.fail(t); return null; });
+            .thenAccept(p -> plan2TaskVisitor.process(p, null).execute(consumer, parameters))
+            .exceptionally(t -> { consumer.accept(null, t); return null; });
     }
 
     @Override
@@ -315,6 +315,9 @@ public class TransportExecutor implements Executor {
             Plan rootPlan = multiPhasePlan.rootPlan();
             for (Map.Entry<Plan, SelectSymbol> entry : dependencies.entrySet()) {
                 Plan plan = entry.getKey();
+
+                /*
+                FIXME
                 SingleRowSingleValueRowReceiver singleRowSingleValueRowReceiver =
                     new SingleRowSingleValueRowReceiver(rootPlan, entry.getValue());
 
@@ -330,6 +333,7 @@ public class TransportExecutor implements Executor {
                     }
                 });
                 dependencyFutures.add(singleRowSingleValueRowReceiver.completionFuture());
+                */
             }
             CompletableFuture[] cfs = dependencyFutures.toArray(new CompletableFuture[0]);
             return CompletableFuture.allOf(cfs).thenCompose(x -> process(rootPlan, context));

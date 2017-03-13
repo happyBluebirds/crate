@@ -23,7 +23,7 @@ package io.crate.operation.projectors;
 
 import com.google.common.base.MoreObjects;
 import io.crate.analyze.symbol.Symbol;
-import io.crate.data.BatchIteratorProjector;
+import io.crate.data.BatchIterator;
 import io.crate.data.Input;
 import io.crate.data.Row;
 import io.crate.executor.transport.ShardUpsertRequest;
@@ -55,50 +55,43 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
-public class IndexWriterProjector extends AbstractProjector {
+public class IndexWriterProjector {
 
-    private final Input<BytesRef> sourceInput;
-    private final RowShardResolver rowShardResolver;
-    private final Supplier<String> indexNameResolver;
-    private final Iterable<? extends CollectExpression<Row, ?>> collectExpressions;
-    private final BulkShardProcessor<ShardUpsertRequest> bulkShardProcessor;
-    private final AtomicBoolean failed = new AtomicBoolean(false);
-
-    public IndexWriterProjector(ClusterService clusterService,
-                                Functions functions,
-                                IndexNameExpressionResolver indexNameExpressionResolver,
-                                Settings settings,
-                                TransportBulkCreateIndicesAction transportBulkCreateIndicesAction,
-                                BulkRequestExecutor<ShardUpsertRequest> shardUpsertAction,
-                                Supplier<String> indexNameResolver,
-                                BulkRetryCoordinatorPool bulkRetryCoordinatorPool,
-                                Reference rawSourceReference,
-                                List<ColumnIdent> primaryKeyIdents,
-                                List<? extends Symbol> primaryKeySymbols,
-                                @Nullable Symbol routingSymbol,
-                                ColumnIdent clusteredByColumn,
-                                Input<?> sourceInput,
-                                Iterable<? extends CollectExpression<Row, ?>> collectExpressions,
-                                @Nullable Integer bulkActions,
-                                @Nullable String[] includes,
-                                @Nullable String[] excludes,
-                                boolean autoCreateIndices,
-                                boolean overwriteDuplicates,
-                                UUID jobId) {
-        this.indexNameResolver = indexNameResolver;
-        this.collectExpressions = collectExpressions;
+    public static BatchIterator create(BatchIterator iterator,
+                                       ClusterService clusterService,
+                                       Functions functions,
+                                       IndexNameExpressionResolver indexNameExpressionResolver,
+                                       Settings settings,
+                                       TransportBulkCreateIndicesAction transportBulkCreateIndicesAction,
+                                       BulkRequestExecutor<ShardUpsertRequest> shardUpsertAction,
+                                       Supplier<String> indexNameResolver,
+                                       BulkRetryCoordinatorPool bulkRetryCoordinatorPool,
+                                       Reference rawSourceReference,
+                                       List<ColumnIdent> primaryKeyIdents,
+                                       List<? extends Symbol> primaryKeySymbols,
+                                       @Nullable Symbol routingSymbol,
+                                       ColumnIdent clusteredByColumn,
+                                       Input<?> sourceInput,
+                                       Iterable<? extends CollectExpression<Row, ?>> collectExpressions,
+                                       @Nullable Integer bulkActions,
+                                       @Nullable String[] includes,
+                                       @Nullable String[] excludes,
+                                       boolean autoCreateIndices,
+                                       boolean overwriteDuplicates,
+                                       UUID jobId) {
+        final Input<BytesRef> finalSourceInput;
         if (includes == null && excludes == null) {
             //noinspection unchecked
-            this.sourceInput = (Input<BytesRef>) sourceInput;
+            finalSourceInput = (Input<BytesRef>) sourceInput;
         } else {
             //noinspection unchecked
-            this.sourceInput =
+            finalSourceInput =
                 new MapInput((Input<Map<String, Object>>) sourceInput, includes, excludes);
         }
-        rowShardResolver = new RowShardResolver(functions, primaryKeyIdents, primaryKeySymbols, clusteredByColumn, routingSymbol);
+        RowShardResolver rowShardResolver = new RowShardResolver(
+            functions, primaryKeyIdents, primaryKeySymbols, clusteredByColumn, routingSymbol);
         ShardUpsertRequest.Builder builder = new ShardUpsertRequest.Builder(
             CrateSettings.BULK_REQUEST_TIMEOUT.extractTimeValue(settings),
             overwriteDuplicates,
@@ -108,7 +101,7 @@ public class IndexWriterProjector extends AbstractProjector {
             jobId,
             false);
 
-        bulkShardProcessor = new BulkShardProcessor<>(
+        BulkShardProcessor bulkShardProcessor = new BulkShardProcessor<>(
             clusterService,
             transportBulkCreateIndicesAction,
             indexNameExpressionResolver,
@@ -120,40 +113,19 @@ public class IndexWriterProjector extends AbstractProjector {
             shardUpsertAction,
             jobId
         );
-    }
-
-    @Override
-    public void downstream(RowReceiver rowReceiver) {
-        super.downstream(rowReceiver);
-    }
-
-    @Override
-    public Result setNextRow(Row row) {
-        throw new UnsupportedOperationException("IndexWriterCountBatchIterator must be the consumer instead");
-    }
-
-    @Override
-    public void finish(RepeatHandle repeatHandle) {
-        throw new UnsupportedOperationException("IndexWriterCountBatchIterator must be the consumer instead");
-    }
-
-    @Override
-    public void fail(Throwable throwable) {
-        throw new UnsupportedOperationException("IndexWriterCountBatchIterator must be the consumer instead");
-    }
-
-    @Override
-    public void kill(Throwable throwable) {
-        throw new UnsupportedOperationException("IndexWriterCountBatchIterator must be the consumer instead");
-    }
-
-    @Override
-    public BatchIteratorProjector asProjector() {
-        Supplier<ShardUpsertRequest.Item> updateItemSupplier = () -> new ShardUpsertRequest.Item(
-            rowShardResolver.id(), null, new Object[]{sourceInput.value()}, null);
-
-        return it -> IndexWriterCountBatchIterator.newIndexInstance(it, indexNameResolver,
-            collectExpressions, rowShardResolver, bulkShardProcessor, updateItemSupplier);
+        return IndexWriterCountBatchIterator.newIndexInstance(
+            iterator,
+            indexNameResolver,
+            collectExpressions,
+            rowShardResolver,
+            bulkShardProcessor,
+            () -> new ShardUpsertRequest.Item(
+                rowShardResolver.id(),
+                null,
+                new Object[] { finalSourceInput.value() },
+                null
+            )
+        );
     }
 
     private static class MapInput implements Input<BytesRef> {

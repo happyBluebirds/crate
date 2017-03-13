@@ -31,15 +31,13 @@ import io.crate.action.job.TransportJobAction;
 import io.crate.concurrent.CompletableFutures;
 import io.crate.data.BatchConsumer;
 import io.crate.data.Bucket;
+import io.crate.data.CollectingBatchConsumer;
 import io.crate.data.Row;
 import io.crate.executor.JobTask;
 import io.crate.executor.transport.kill.TransportKillJobsNodeAction;
 import io.crate.jobs.*;
 import io.crate.operation.NodeOperation;
 import io.crate.operation.NodeOperationTree;
-import io.crate.operation.RowCountResultRowDownstream;
-import io.crate.operation.projectors.BatchConsumerToRowReceiver;
-import io.crate.operation.projectors.RowReceiver;
 import io.crate.planner.node.ExecutionPhase;
 import io.crate.planner.node.ExecutionPhases;
 import io.crate.planner.node.NodeOperationGrouper;
@@ -52,6 +50,7 @@ import org.elasticsearch.indices.IndicesService;
 import javax.annotation.Nullable;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 
 /**
@@ -131,17 +130,17 @@ public class ExecutionPhasesTask extends JobTask {
     }
 
     @Override
-    public void execute(RowReceiver rowReceiver, Row parameters) {
+    public void execute(BatchConsumer consumer, Row parameters) {
         assert nodeOperationTrees.size() == 1 : "must only have 1 NodeOperationTree for non-bulk operations";
         NodeOperationTree nodeOperationTree = nodeOperationTrees.get(0);
         Map<String, Collection<NodeOperation>> operationByServer = NodeOperationGrouper.groupByServer(nodeOperationTree.nodeOperations());
 
         List<ExecutionPhase> handlerPhases = Collections.singletonList(nodeOperationTree.leaf());
-        List<RowReceiver> handlerReceivers = Collections.singletonList(rowReceiver);
+        List<BatchConsumer> handlerReceivers = Collections.singletonList(consumer);
         try {
             setupContext(operationByServer, handlerPhases, handlerReceivers);
         } catch (Throwable throwable) {
-            rowReceiver.fail(throwable);
+            consumer.accept(null, throwable);
         }
     }
 
@@ -158,13 +157,14 @@ public class ExecutionPhasesTask extends JobTask {
         Map<String, Collection<NodeOperation>> operationByServer = NodeOperationGrouper.groupByServer(nodeOperations);
 
         List<ExecutionPhase> handlerPhases = new ArrayList<>(nodeOperationTrees.size());
-        List<RowReceiver> handlerReceivers = new ArrayList<>(nodeOperationTrees.size());
+        List<BatchConsumer> handlerReceivers = new ArrayList<>(nodeOperationTrees.size());
         List<CompletableFuture<Long>> results = new ArrayList<>(nodeOperationTrees.size());
         for (NodeOperationTree nodeOperationTree : nodeOperationTrees) {
-            CompletableFuture<Long> result = new CompletableFuture<>();
-            results.add(result);
+            CollectingBatchConsumer<?, Long> consumer = new CollectingBatchConsumer<>(
+                Collectors.collectingAndThen(Collectors.summingLong(r -> ((long) r.get(0))), sum -> sum));
+            handlerReceivers.add(consumer);
+            results.add(consumer.resultFuture());
             handlerPhases.add(nodeOperationTree.leaf());
-            handlerReceivers.add(new RowCountResultRowDownstream(result));
         }
         try {
             setupContext(operationByServer, handlerPhases, handlerReceivers);
@@ -176,7 +176,7 @@ public class ExecutionPhasesTask extends JobTask {
 
     private void setupContext(Map<String, Collection<NodeOperation>> operationByServer,
                               List<ExecutionPhase> handlerPhases,
-                              List<RowReceiver> handlerReceivers) throws Throwable {
+                              List<BatchConsumer> handlerReceivers) throws Throwable {
         assert handlerPhases.size() == handlerReceivers.size() : "handlerPhases size must match handlerReceivers size";
 
         String localNodeId = clusterService.localNode().getId();
@@ -244,15 +244,15 @@ public class ExecutionPhasesTask extends JobTask {
     }
 
     private List<Tuple<ExecutionPhase, BatchConsumer>> createHandlerPhaseAndReceivers(List<ExecutionPhase> handlerPhases,
-                                                                                    List<RowReceiver> handlerReceivers,
-                                                                                    InitializationTracker initializationTracker) {
+                                                                                      List<BatchConsumer> handlerReceivers,
+                                                                                      InitializationTracker initializationTracker) {
         List<Tuple<ExecutionPhase, BatchConsumer>> handlerPhaseAndReceiver = new ArrayList<>();
-        ListIterator<RowReceiver> receiverIt = handlerReceivers.listIterator();
+        ListIterator<BatchConsumer> receiverIt = handlerReceivers.listIterator();
 
         for (ExecutionPhase handlerPhase : handlerPhases) {
-            InterceptingRowReceiver interceptingRowReceiver = new InterceptingRowReceiver(
+            InterceptingBatchConsumer interceptingBatchConsumer = new InterceptingBatchConsumer(
                 jobId(), receiverIt.next(), initializationTracker, transportKillJobsNodeAction);
-            handlerPhaseAndReceiver.add(new Tuple<>(handlerPhase, new BatchConsumerToRowReceiver(interceptingRowReceiver)));
+            handlerPhaseAndReceiver.add(new Tuple<>(handlerPhase, interceptingBatchConsumer));
         }
         return handlerPhaseAndReceiver;
     }

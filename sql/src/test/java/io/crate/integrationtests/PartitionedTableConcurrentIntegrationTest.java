@@ -23,6 +23,7 @@
 package io.crate.integrationtests;
 
 import io.crate.data.Bucket;
+import io.crate.data.CollectionBucket;
 import io.crate.metadata.PartitionName;
 import io.crate.testing.SQLResponse;
 import io.crate.testing.SQLTransportExecutor;
@@ -179,7 +180,7 @@ public class PartitionedTableConcurrentIntegrationTest extends SQLTransportInteg
 
         PlanForNode plan = plan(stmt);
         execute("delete from t");
-        return execute(plan).completionFuture().get(500, TimeUnit.MILLISECONDS);
+        return new CollectionBucket(execute(plan).completionFuture().get(500, TimeUnit.MILLISECONDS));
     }
 
     @Test
@@ -211,7 +212,7 @@ public class PartitionedTableConcurrentIntegrationTest extends SQLTransportInteg
         PlanForNode plan = plan("refresh table t"); // create a plan in which the partitions exist
         execute("delete from t");
 
-        CompletableFuture<Bucket> future = execute(plan).completionFuture(); // execute now that the partitions are gone
+        CompletableFuture<?> future = execute(plan).completionFuture(); // execute now that the partitions are gone
         // shouldn't throw an exception:
         future.get(500, TimeUnit.MILLISECONDS);
     }
@@ -225,7 +226,7 @@ public class PartitionedTableConcurrentIntegrationTest extends SQLTransportInteg
         PlanForNode plan = plan("optimize table t"); // create a plan in which the partitions exist
         execute("delete from t");
 
-        Future<Bucket> future = execute(plan).completionFuture(); // execute now that the partitions are gone
+        Future<?> future = execute(plan).completionFuture(); // execute now that the partitions are gone
         // shouldn't throw an exception:
         future.get(500, TimeUnit.MILLISECONDS);
     }

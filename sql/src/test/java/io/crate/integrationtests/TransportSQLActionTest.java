@@ -26,7 +26,6 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableMap;
 import io.crate.TimestampFormat;
 import io.crate.action.sql.SQLActionException;
-import io.crate.data.Bucket;
 import io.crate.exceptions.SQLExceptions;
 import io.crate.testing.SQLBulkResponse;
 import io.crate.testing.TestingHelpers;
@@ -88,7 +87,7 @@ public class TransportSQLActionTest extends SQLTransportIntegrationTest {
 
         PlanForNode plan = plan("select * from t");
         execute("drop table t");
-        Future<Bucket> future = execute(plan).completionFuture();
+        Future<?> future = execute(plan).completionFuture();
         try {
             future.get(5, TimeUnit.SECONDS);
         } catch (Throwable t) {
@@ -105,7 +104,7 @@ public class TransportSQLActionTest extends SQLTransportIntegrationTest {
 
         PlanForNode plan = plan("delete from parted_table where day='2016-06-07'");
         execute("delete from parted_table where day='2016-06-07'");
-        Future<Bucket> future = execute(plan).completionFuture();
+        Future<?> future = execute(plan).completionFuture();
         try {
             future.get(5, TimeUnit.SECONDS);
         } catch (Throwable t) {

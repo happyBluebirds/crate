@@ -29,8 +29,7 @@ import io.crate.analyze.symbol.Symbol;
 import io.crate.analyze.symbol.Symbols;
 import io.crate.analyze.symbol.ValueSymbolVisitor;
 import io.crate.breaker.RamAccountingContext;
-import io.crate.data.Input;
-import io.crate.data.Row;
+import io.crate.data.*;
 import io.crate.executor.transport.ShardDeleteRequest;
 import io.crate.executor.transport.ShardUpsertRequest;
 import io.crate.executor.transport.TransportActionProvider;
@@ -39,8 +38,9 @@ import io.crate.metadata.settings.CrateSettings;
 import io.crate.operation.AggregationContext;
 import io.crate.operation.InputFactory;
 import io.crate.operation.RowFilter;
+import io.crate.operation.aggregation.RowTransformingBatchIterator;
 import io.crate.operation.collect.CollectExpression;
-import io.crate.operation.projectors.fetch.FetchProjector;
+import io.crate.operation.projectors.fetch.FetchBatchAccumulator;
 import io.crate.operation.projectors.fetch.FetchProjectorContext;
 import io.crate.operation.projectors.fetch.TransportFetchOperation;
 import io.crate.operation.projectors.sorting.OrderingByPosition;
@@ -63,9 +63,10 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collector;
 
 public class ProjectionToProjectorVisitor
-    extends ProjectionVisitor<ProjectionToProjectorVisitor.Context, Projector> implements ProjectorFactory {
+    extends ProjectionVisitor<ProjectionToProjectorVisitor.Context, BatchIterator> implements ProjectorFactory {
 
     private final ClusterService clusterService;
     private final Functions functions;
@@ -129,7 +130,7 @@ public class ProjectionToProjectorVisitor
     }
 
     @Override
-    public Projector visitOrderedTopN(OrderedTopNProjection projection, Context context) {
+    public BatchIterator visitOrderedTopN(OrderedTopNProjection projection, Context context) {
         /* OrderBy symbols are added to the rows to enable sorting on them post-collect. E.g.:
          *
          * outputs: [x]
@@ -151,7 +152,7 @@ public class ProjectionToProjectorVisitor
             orderByIndices[idx++] = i;
         }
         if (projection.limit() > TopN.NO_LIMIT) {
-            return new SortingTopNProjector(
+            SortingTopNCollector collector = new SortingTopNCollector(
                 inputs,
                 ctx.expressions(),
                 numOutputs,
@@ -159,8 +160,14 @@ public class ProjectionToProjectorVisitor
                 projection.limit(),
                 projection.offset()
             );
+            return CollectingBatchIterator.newInstance(
+                context.iterator,
+                collector,
+                collector.numOutputs()
+            );
         }
-        return new SortingProjector(
+        return SortingProjector.create(
+            context.iterator,
             inputs,
             ctx.expressions(),
             numOutputs,
@@ -170,31 +177,36 @@ public class ProjectionToProjectorVisitor
     }
 
     @Override
-    public Projector visitTopNProjection(TopNProjection projection, Context context) {
+    public BatchIterator visitTopNProjection(TopNProjection projection, Context context) {
         InputFactory.Context<CollectExpression<Row, ?>> ctx = inputFactory.ctxForInputColumns(projection.outputs());
         assert projection.limit() > TopN.NO_LIMIT : "TopNProjection must have a limit";
-        return new SimpleTopNProjector(
+        BatchIterator it = context.iterator;
+        if (projection.offset() > 0) {
+            it = new SkippingBatchIterator(it, projection.offset());
+        }
+        return new RowTransformingBatchIterator(
+            LimitingBatchIterator.newInstance(it, projection.limit()),
             ctx.topLevelInputs(),
-            ctx.expressions(),
-            projection.limit(),
-            projection.offset());
+            ctx.expressions()
+        );
     }
 
     @Override
-    public Projector visitEvalProjection(EvalProjection projection, Context context) {
+    public BatchIterator visitEvalProjection(EvalProjection projection, Context context) {
         InputFactory.Context<CollectExpression<Row, ?>> ctx = inputFactory.ctxForInputColumns(projection.outputs());
-        return new InputRowProjector(ctx.topLevelInputs(), ctx.expressions());
+        return new RowTransformingBatchIterator(context.iterator, ctx.topLevelInputs(), ctx.expressions());
     }
 
     @Override
-    public Projector visitGroupProjection(GroupProjection projection, Context context) {
+    public BatchIterator visitGroupProjection(GroupProjection projection, Context context) {
         InputFactory.Context<CollectExpression<Row, ?>> ctx = inputFactory.ctxForAggregations();
 
         ctx.add(projection.keys());
         ctx.add(projection.values());
 
         List<Input<?>> keyInputs = ctx.topLevelInputs();
-        return new GroupingProjector(
+        return GroupingProjector.create(
+            context.iterator,
             Symbols.extractTypes(projection.keys()),
             keyInputs,
             Iterables.toArray(ctx.expressions(), CollectExpression.class),
@@ -204,22 +216,25 @@ public class ProjectionToProjectorVisitor
     }
 
     @Override
-    public Projector visitMergeCountProjection(MergeCountProjection projection, Context context) {
-        return new MergeCountProjector();
+    public BatchIterator visitMergeCountProjection(MergeCountProjection projection, Context context) {
+        return CollectingBatchIterator.summingLong(context.iterator);
     }
 
     @Override
-    public Projector visitAggregationProjection(AggregationProjection projection, Context context) {
+    public BatchIterator visitAggregationProjection(AggregationProjection projection, Context context) {
         InputFactory.Context<CollectExpression<Row, ?>> ctx = inputFactory.ctxForAggregations();
         ctx.add(projection.aggregations());
-        return new AggregationPipe(
+
+        return AggregationPipe.create(
+            context.iterator,
             ctx.expressions(),
             ctx.aggregations().toArray(new AggregationContext[0]),
-            context.ramAccountingContext);
+            context.ramAccountingContext
+        );
     }
 
     @Override
-    public Projector visitWriterProjection(WriterProjection projection, Context context) {
+    public BatchIterator visitWriterProjection(WriterProjection projection, Context context) {
         InputFactory.Context<CollectExpression<Row, ?>> ctx = inputFactory.ctxForInputColumns();
 
         List<Input<?>> inputs = null;
@@ -248,15 +263,19 @@ public class ProjectionToProjectorVisitor
         }
         uri = sb.toString();
 
-        return new FileWriterProjector(
-            ((ThreadPoolExecutor) threadPool.generic()),
-            uri,
-            projection.compressionType(),
-            inputs,
-            ctx.expressions(),
-            overwrites,
-            projection.outputNames(),
-            projection.outputFormat()
+        return CollectingBatchIterator.newInstance(
+            context.iterator,
+            new FileWriterCountCollector(
+                ((ThreadPoolExecutor) threadPool.generic()),
+                uri,
+                projection.compressionType(),
+                inputs,
+                ctx.expressions(),
+                overwrites,
+                projection.outputNames(),
+                projection.outputFormat()
+            ),
+            1
         );
     }
 
@@ -276,7 +295,7 @@ public class ProjectionToProjectorVisitor
     }
 
     @Override
-    public Projector visitSourceIndexWriterProjection(SourceIndexWriterProjection projection, Context context) {
+    public BatchIterator visitSourceIndexWriterProjection(SourceIndexWriterProjection projection, Context context) {
         InputFactory.Context<CollectExpression<Row, ?>> ctx = inputFactory.ctxForInputColumns();
         List<Input<?>> partitionedByInputs = new ArrayList<>(projection.partitionedBySymbols().size());
         for (Symbol partitionedBySymbol : projection.partitionedBySymbols()) {
@@ -285,7 +304,8 @@ public class ProjectionToProjectorVisitor
         Input<?> sourceInput = ctx.add(projection.rawSource());
         Supplier<String> indexNameResolver =
             IndexNameResolver.create(projection.tableIdent(), projection.partitionIdent(), partitionedByInputs);
-        return new IndexWriterProjector(
+        return IndexWriterProjector.create(
+            context.iterator,
             clusterService,
             functions,
             indexNameExpressionResolver,
@@ -311,7 +331,7 @@ public class ProjectionToProjectorVisitor
     }
 
     @Override
-    public Projector visitColumnIndexWriterProjection(ColumnIndexWriterProjection projection, Context context) {
+    public BatchIterator visitColumnIndexWriterProjection(ColumnIndexWriterProjection projection, Context context) {
         InputFactory.Context<CollectExpression<Row, ?>> ctx = inputFactory.ctxForInputColumns();
         List<Input<?>> partitionedByInputs = new ArrayList<>(projection.partitionedBySymbols().size());
         for (Symbol partitionedBySymbol : projection.partitionedBySymbols()) {
@@ -321,7 +341,8 @@ public class ProjectionToProjectorVisitor
         for (Symbol symbol : projection.columnSymbols()) {
             insertInputs.add(ctx.add(symbol));
         }
-        return new ColumnIndexWriterProjector(
+        return ColumnIndexWriterProjector.create(
+            context.iterator,
             clusterService,
             functions,
             indexNameExpressionResolver,
@@ -344,13 +365,16 @@ public class ProjectionToProjectorVisitor
     }
 
     @Override
-    public Projector visitFilterProjection(FilterProjection projection, Context context) {
+    public BatchIterator visitFilterProjection(FilterProjection projection, Context context) {
         Predicate<Row> rowFilter = RowFilter.create(inputFactory, projection.query());
-        return new FilterProjector(rowFilter);
+        return new FilteringBatchIterator(context.iterator, rowData -> {
+            Row row = RowBridging.toRow(rowData);
+            return () -> rowFilter.test(row);
+        });
     }
 
     @Override
-    public Projector visitUpdateProjection(final UpdateProjection projection, Context context) {
+    public BatchIterator visitUpdateProjection(final UpdateProjection projection, Context context) {
         checkShardLevel("Update projection can only be executed on a shard");
 
         ShardUpsertRequest.Builder builder = new ShardUpsertRequest.Builder(
@@ -374,7 +398,8 @@ public class ProjectionToProjectorVisitor
             context.jobId
         );
 
-        return new DMLProjector<>(
+        return DMLProjector.create(
+            context.iterator,
             shardId,
             resolveUidCollectExpression(projection.uidSymbol()),
             bulkShardProcessor,
@@ -383,7 +408,7 @@ public class ProjectionToProjectorVisitor
     }
 
     @Override
-    public Projector visitDeleteProjection(DeleteProjection projection, Context context) {
+    public BatchIterator visitDeleteProjection(DeleteProjection projection, Context context) {
         checkShardLevel("Delete projection can only be executed on a shard");
         ShardDeleteRequest.Builder builder = new ShardDeleteRequest.Builder(
             CrateSettings.BULK_REQUEST_TIMEOUT.extractTimeValue(settings),
@@ -401,7 +426,8 @@ public class ProjectionToProjectorVisitor
             transportActionProvider.transportShardDeleteAction()::execute,
             context.jobId
         );
-        return new DMLProjector<>(
+        return DMLProjector.create(
+            context.iterator,
             shardId,
             resolveUidCollectExpression(projection.uidSymbol()),
             bulkShardProcessor,
@@ -422,29 +448,32 @@ public class ProjectionToProjectorVisitor
     }
 
     @Override
-    public Projector visitFetchProjection(FetchProjection projection, Context context) {
+    public BatchIterator visitFetchProjection(FetchProjection projection, Context context) {
         FetchProjectorContext projectorContext = new FetchProjectorContext(
             projection.fetchSources(),
             projection.nodeReaders(),
             projection.readerIndices(),
             projection.indicesToIdents()
         );
-        return new FetchProjector(
-            new TransportFetchOperation(
-                transportActionProvider.transportFetchNodeAction(),
-                projectorContext.nodeIdsToStreamers(),
-                context.jobId,
-                projection.collectPhaseId()
-            ),
-            functions,
-            projection.outputSymbols(),
-            projectorContext,
-            projection.getFetchSize()
-        );
+        return new AsyncOperationBatchIterator(
+            context.iterator,
+            projection.outputSymbols().size(),
+            new FetchBatchAccumulator(
+                new TransportFetchOperation(
+                    transportActionProvider.transportFetchNodeAction(),
+                    projectorContext.nodeIdsToStreamers(),
+                    context.jobId,
+                    projection.collectPhaseId()
+                ),
+                functions,
+                projection.outputSymbols(),
+                projectorContext,
+                projection.getFetchSize()
+            ));
     }
 
     @Override
-    public Projector visitSysUpdateProjection(SysUpdateProjection projection, Context context) {
+    public BatchIterator visitSysUpdateProjection(SysUpdateProjection projection, Context context) {
         Map<Reference, Symbol> assignments = projection.assignments();
         assert !assignments.isEmpty() : "at least one assignement is required";
         InputFactory.Context<RowCollectExpression<?, ?>> readCtx = inputFactory.ctxForRefs(RowContextReferenceResolver.INSTANCE);
@@ -466,26 +495,43 @@ public class ProjectionToProjectorVisitor
         SysRowUpdater<?> rowUpdater = sysUpdaterGetter.apply(tableIdent);
         assert rowUpdater != null: "row updater needs to exist";
         Consumer<Object> rowWriter = rowUpdater.newRowWriter(assignmentCols, valueInputs, readCtx.expressions());
-        return new SysUpdateProjector(rowWriter);
+        return CollectingBatchIterator.newInstance(
+            context.iterator,
+            Collector.of(
+                () -> new SysUpdateState(rowWriter),
+                (state, row) -> {
+                    state.rowWriter.accept(row.get(0));
+                    state.rowCount++;
+                },
+                (state1, state2) -> { throw new UnsupportedOperationException("Combine not supported"); },
+                state -> Collections.singletonList(new Row1(state.rowCount))
+            ),
+            1
+        );
     }
 
     @Override
-    public Projector create(Projection projection, RamAccountingContext ramAccountingContext, UUID jobId) {
-        return process(projection, new Context(ramAccountingContext, jobId));
+    public BatchIterator projectIterator(BatchIterator iterator,
+                                         Projection projection,
+                                         RamAccountingContext ramAccountingContext,
+                                         UUID jobId) {
+        return process(projection, new Context(iterator, ramAccountingContext, jobId));
     }
 
     @Override
-    protected Projector visitProjection(Projection projection, Context context) {
+    protected BatchIterator visitProjection(Projection projection, Context context) {
         throw new UnsupportedOperationException("Unsupported projection");
     }
 
     static class Context {
 
+        private final BatchIterator iterator;
         private final RamAccountingContext ramAccountingContext;
         private final UUID jobId;
         private final TransactionContext transactionContext = new TransactionContext(SessionContext.SYSTEM_SESSION);
 
-        public Context(RamAccountingContext ramAccountingContext, UUID jobId) {
+        public Context(BatchIterator iterator,RamAccountingContext ramAccountingContext, UUID jobId) {
+            this.iterator = iterator;
             this.ramAccountingContext = ramAccountingContext;
             this.jobId = jobId;
         }

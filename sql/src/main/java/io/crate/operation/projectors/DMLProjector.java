@@ -22,7 +22,7 @@
 
 package io.crate.operation.projectors;
 
-import io.crate.data.BatchIteratorProjector;
+import io.crate.data.BatchIterator;
 import io.crate.data.Row;
 import io.crate.executor.transport.ShardRequest;
 import io.crate.operation.collect.CollectExpression;
@@ -34,57 +34,24 @@ import java.util.Collections;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-class DMLProjector<Request extends ShardRequest> extends AbstractProjector {
+class DMLProjector {
 
-    private final ShardId shardId;
-    private final CollectExpression<Row, ?> collectIdExpression;
-
-    private final BulkShardProcessor<Request> bulkShardProcessor;
-    private final Function<String, ShardRequest.Item> itemFactory;
-
-    DMLProjector(ShardId shardId,
-                 CollectExpression<Row, ?> collectIdExpression,
-                 BulkShardProcessor<Request> bulkShardProcessor,
-                 Function<String, ShardRequest.Item> itemFactory) {
-        this.shardId = shardId;
-        this.collectIdExpression = collectIdExpression;
-        this.bulkShardProcessor = bulkShardProcessor;
-        this.itemFactory = itemFactory;
-    }
-
-    @Override
-    public Result setNextRow(Row row) {
-        throw new UnsupportedOperationException("DMLProjector must be used as BatchIteratorProjector");
-    }
-
-    @Override
-    public void finish(RepeatHandle repeatHandle) {
-        throw new UnsupportedOperationException("DMLProjector must be used as BatchIteratorProjector");
-    }
-
-    @Override
-    public void downstream(RowReceiver rowReceiver) {
-        super.downstream(rowReceiver);
-    }
-
-    @Override
-    public void fail(Throwable throwable) {
-        throw new UnsupportedOperationException("DMLProjector must be used as BatchIteratorProjector");
-    }
-
-    @Override
-    public void kill(Throwable throwable) {
-        throw new UnsupportedOperationException("DMLProjector must be used as BatchIteratorProjector");
-    }
-
-    @Override
-    public BatchIteratorProjector asProjector() {
+    static <Request extends ShardRequest> BatchIterator create(BatchIterator iterator,
+                                                               ShardId shardId,
+                                                               CollectExpression<Row, ?> collectIdExpression,
+                                                               BulkShardProcessor<Request> bulkShardProcessor,
+                                                               Function<String, ShardRequest.Item> itemFactory) {
         Supplier<ShardRequest.Item> updateItemSupplier = () -> {
             BytesRef id = (BytesRef) collectIdExpression.value();
             return itemFactory.apply(id.utf8ToString());
         };
 
-        return it -> IndexWriterCountBatchIterator.newShardInstance(it, shardId,
-            Collections.singletonList(collectIdExpression), bulkShardProcessor, updateItemSupplier);
+        return IndexWriterCountBatchIterator.newShardInstance(
+            iterator,
+            shardId,
+            Collections.singletonList(collectIdExpression),
+            bulkShardProcessor,
+            updateItemSupplier
+        );
     }
 }

@@ -55,7 +55,7 @@ public class DistributingDownstreamFactory extends AbstractComponent {
         super(settings);
         this.clusterService = clusterService;
         this.transportDistributedResultAction = transportDistributedResultAction;
-        distributingDownstreamLogger = Loggers.getLogger(DistributingDownstream.class, settings);
+        distributingDownstreamLogger = Loggers.getLogger(DistributingConsumer.class, settings);
     }
 
     public BatchConsumer create(NodeOperation nodeOperation,
@@ -89,7 +89,7 @@ public class DistributingDownstreamFactory extends AbstractComponent {
                 throw new UnsupportedOperationException("Can't handle distributionInfo: " + distributionInfo);
         }
 
-        return new DistributingDownstream(
+        return new DistributingConsumer(
             distributingDownstreamLogger,
             jobId,
             multiBucketBuilder,
@@ -100,6 +100,6 @@ public class DistributingDownstreamFactory extends AbstractComponent {
             transportDistributedResultAction,
             streamers,
             pageSize
-        ).asConsumer();
+        );
     }
 }

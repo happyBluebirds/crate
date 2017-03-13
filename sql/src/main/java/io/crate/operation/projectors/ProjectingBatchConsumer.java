@@ -25,7 +25,6 @@ package io.crate.operation.projectors;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.data.BatchConsumer;
 import io.crate.data.BatchIterator;
-import io.crate.data.BatchIteratorProjector;
 import io.crate.planner.projection.Projection;
 
 import javax.annotation.Nullable;
@@ -73,12 +72,7 @@ public class ProjectingBatchConsumer implements BatchConsumer {
     public void accept(BatchIterator iterator, @Nullable Throwable failure) {
         if (failure == null) {
             for (Projection projection : projections) {
-                Projector projector = projectorFactory.create(projection, ramAccountingContext, jobId);
-                BatchIteratorProjector batchIteratorProjector = projector.asProjector();
-                if (batchIteratorProjector == null) {
-                    throw new NullPointerException("projector doesn't implement BatchIteratorProjector: " + projector);
-                }
-                iterator = batchIteratorProjector.apply(iterator);
+                iterator = projectorFactory.projectIterator(iterator, projection, ramAccountingContext, jobId);
             }
             consumer.accept(iterator, null);
         } else {

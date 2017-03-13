@@ -22,35 +22,14 @@
 
 package io.crate.operation.projectors;
 
-import io.crate.data.BatchIteratorProjector;
-import io.crate.data.CollectingBatchIterator;
-import io.crate.data.Row;
-import io.crate.data.Row1;
+import java.util.function.Consumer;
 
-public class MergeCountProjector extends AbstractProjector {
+class SysUpdateState {
 
-    private long sum;
+    final Consumer<Object> rowWriter;
+    long rowCount = 0;
 
-    @Override
-    public Result setNextRow(Row row) {
-        Long count = (Long) row.get(0);
-        sum += count;
-        return Result.CONTINUE;
-    }
-
-    @Override
-    public void finish(RepeatHandle repeatHandle) {
-        downstream.setNextRow(new Row1(sum));
-        downstream.finish(RepeatHandle.UNSUPPORTED);
-    }
-
-    @Override
-    public void fail(Throwable throwable) {
-        downstream.fail(throwable);
-    }
-
-    @Override
-    public BatchIteratorProjector asProjector() {
-        return CollectingBatchIterator::summingLong;
+    SysUpdateState(Consumer<Object> rowWriter) {
+        this.rowWriter = rowWriter;
     }
 }

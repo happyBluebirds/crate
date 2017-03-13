@@ -32,7 +32,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -57,7 +56,6 @@ public class DistributingConsumer implements BatchConsumer {
     private final int pageSize;
     private final Bucket[] buckets;
     private final List<Downstream> downstreams;
-    private final CompletableFuture<Void> finishFuture;
     private final boolean traceEnabled;
 
     private volatile Throwable failure;
@@ -71,8 +69,7 @@ public class DistributingConsumer implements BatchConsumer {
                                 Collection<String> downstreamNodeIds,
                                 TransportDistributedResultAction distributedResultAction,
                                 Streamer<?>[] streamers,
-                                int pageSize,
-                                CompletableFuture<Void> finishFuture) {
+                                int pageSize) {
         this.traceEnabled = logger.isTraceEnabled();
         this.logger = logger;
         this.jobId = jobId;
@@ -85,7 +82,6 @@ public class DistributingConsumer implements BatchConsumer {
         this.pageSize = pageSize;
         this.buckets = new Bucket[downstreamNodeIds.size()];
         downstreams = new ArrayList<>(downstreamNodeIds.size());
-        this.finishFuture = finishFuture;
         for (String downstreamNodeId : downstreamNodeIds) {
             downstreams.add(new Downstream(downstreamNodeId));
         }
@@ -163,7 +159,6 @@ public class DistributingConsumer implements BatchConsumer {
             if (it != null) {
                 it.close();
             }
-            finishFuture.completeExceptionally(failure);
         }
     }
 
@@ -213,12 +208,6 @@ public class DistributingConsumer implements BatchConsumer {
                 }
             } else {
                 it.close();
-                Throwable failure = this.failure;
-                if (failure == null) {
-                    finishFuture.complete(null);
-                } else {
-                    finishFuture.completeExceptionally(failure);
-                }
             }
         }
     }

@@ -22,93 +22,62 @@
 
 package io.crate.executor.transport.executionphases;
 
-import io.crate.data.Row;
+import io.crate.data.BatchConsumer;
+import io.crate.data.BatchIterator;
 import io.crate.exceptions.SQLExceptions;
 import io.crate.executor.transport.kill.KillJobsRequest;
 import io.crate.executor.transport.kill.KillResponse;
 import io.crate.executor.transport.kill.TransportKillJobsNodeAction;
-import io.crate.operation.projectors.*;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
 
 import javax.annotation.Nullable;
 import java.util.Collections;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BiConsumer;
 
-class InterceptingRowReceiver implements RowReceiver, BiConsumer<Object, Throwable> {
+class InterceptingBatchConsumer implements BatchConsumer {
 
-    private final static ESLogger LOGGER = Loggers.getLogger(InterceptingRowReceiver.class);
+    private final static ESLogger LOGGER = Loggers.getLogger(InterceptingBatchConsumer.class);
 
     private final AtomicInteger upstreams = new AtomicInteger(2);
     private final UUID jobId;
-    private final RowReceiver rowReceiver;
+    private final BatchConsumer consumer;
     private final TransportKillJobsNodeAction transportKillJobsNodeAction;
-    private final CompletableFuture<Void> rowReceiverUpstreamFinished = new CompletableFuture<>();
-    private final AtomicBoolean rowReceiverDone = new AtomicBoolean(false);
+    private final CompletableFuture<BatchIterator> batchConsumerFinished = new CompletableFuture<>();
+    private final AtomicBoolean batchConsumerDone = new AtomicBoolean(false);
     private Throwable failure;
 
-    InterceptingRowReceiver(UUID jobId,
-                            RowReceiver rowReceiver,
-                            InitializationTracker jobsInitialized,
-                            TransportKillJobsNodeAction transportKillJobsNodeAction) {
+    InterceptingBatchConsumer(UUID jobId,
+                              BatchConsumer consumer,
+                              InitializationTracker jobsInitialized,
+                              TransportKillJobsNodeAction transportKillJobsNodeAction) {
         this.jobId = jobId;
-        this.rowReceiver = rowReceiver;
+        this.consumer = consumer;
         this.transportKillJobsNodeAction = transportKillJobsNodeAction;
-        jobsInitialized.future.whenComplete(this);
+        jobsInitialized.future.whenComplete((r, f) -> tryForwardResult(f));
     }
 
     @Override
-    public void fail(@Nullable Throwable throwable) {
-        if (rowReceiverDone.compareAndSet(false, true)) {
-            if (throwable == null) {
-                rowReceiverUpstreamFinished.complete(null);
+    public void accept(BatchIterator iterator, @Nullable Throwable failure) {
+        if (batchConsumerDone.compareAndSet(false, true)) {
+            if (failure == null) {
+                batchConsumerFinished.complete(iterator);
             } else {
-                rowReceiverUpstreamFinished.completeExceptionally(throwable);
+                batchConsumerFinished.completeExceptionally(failure);
             }
-            tryForwardResult(throwable);
+            tryForwardResult(failure);
         }
     }
 
     @Override
-    public void finish(RepeatHandle repeatHandle) {
-        fail(null);
-    }
-
-    @Override
     public void kill(Throwable throwable) {
-        fail(throwable);
+        accept(null, throwable);
     }
 
-    @Override
-    public Set<Requirement> requirements() {
-        return Requirements.NO_REQUIREMENTS;
-    }
-
-    @Override
-    public CompletableFuture<?> completionFuture() {
-        return rowReceiverUpstreamFinished;
-    }
-
-    @Override
-    public Result setNextRow(Row row) {
-        return rowReceiver.setNextRow(row);
-    }
-
-    @Override
-    public void pauseProcessed(ResumeHandle resumeable) {
-        rowReceiver.pauseProcessed(resumeable);
-    }
-
-    @Override
-    public void accept(Object o, Throwable throwable) {
-        tryForwardResult(throwable);
-    }
 
     private void tryForwardResult(Throwable throwable) {
         if (throwable != null && (failure == null || failure instanceof InterruptedException)) {
@@ -118,20 +87,20 @@ class InterceptingRowReceiver implements RowReceiver, BiConsumer<Object, Throwab
             return;
         }
         if (failure == null) {
-            rowReceiver.finish(RepeatHandle.UNSUPPORTED);
+            consumer.accept(batchConsumerFinished.join(), null);
         } else {
             transportKillJobsNodeAction.broadcast(
                 new KillJobsRequest(Collections.singletonList(jobId)), new ActionListener<KillResponse>() {
                     @Override
                     public void onResponse(KillResponse killResponse) {
                         LOGGER.trace("Killed {} jobs before forwarding the failure={}", killResponse.numKilled(), failure);
-                        rowReceiver.fail(failure);
+                        consumer.accept(null, failure);
                     }
 
                     @Override
                     public void onFailure(Throwable e) {
                         LOGGER.trace("Failed to kill job, forwarding failure anyway...", e);
-                        rowReceiver.fail(failure);
+                        consumer.accept(null, failure);
                     }
                 });
         }
@@ -142,8 +111,8 @@ class InterceptingRowReceiver implements RowReceiver, BiConsumer<Object, Throwab
         return "InterceptingRowReceiver{" +
                "upstreams=" + upstreams +
                ", jobId=" + jobId +
-               ", rowReceiver=" + rowReceiver +
-               ", rowReceiverDone=" + rowReceiverDone +
+               ", consumer=" + consumer +
+               ", rowReceiverDone=" + batchConsumerDone +
                ", failure=" + failure +
                '}';
     }

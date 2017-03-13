@@ -20,43 +20,42 @@
  * agreement.
  */
 
-package io.crate.executor.task;
+package io.crate.data;
 
-import io.crate.data.BatchConsumer;
-import io.crate.data.Row;
-import io.crate.data.Row1;
-import io.crate.data.RowsBatchIterator;
-import io.crate.executor.Task;
-import io.crate.planner.PlanPrinter;
-import io.crate.planner.node.management.ExplainPlan;
-
-import java.util.List;
-import java.util.Map;
+import javax.annotation.Nullable;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collector;
 
-public class ExplainTask implements Task {
+public class CollectingBatchConsumer<S, R> implements BatchConsumer {
 
-    private final ExplainPlan explainPlan;
+    private final Collector<Row, S, R> collector;
+    private final CompletableFuture<R> resultFuture = new CompletableFuture<R>();
 
-    public ExplainTask(ExplainPlan explainPlan) {
-        this.explainPlan = explainPlan;
+    public CollectingBatchConsumer(Collector<Row, S, R> collector) {
+        this.collector = collector;
+    }
+
+    public CompletableFuture<R> resultFuture() {
+        return resultFuture;
     }
 
     @Override
-    public void execute(BatchConsumer consumer, Row parameters) {
-        Row1 row;
-        try {
-            Map<String, Object> map = PlanPrinter.objectMap(explainPlan.subPlan());
-            row = new Row1(map);
-        } catch (Throwable t) {
-            consumer.accept(null, t);
-            return;
+    public void accept(BatchIterator iterator, @Nullable Throwable failure) {
+        if (failure == null) {
+            BatchRowVisitor
+                .visitRows(iterator, collector.supplier().get(), collector, resultFuture)
+                .whenComplete((r, f) -> iterator.close());
+        } else {
+            if (iterator != null) {
+                iterator.close();
+            }
+            resultFuture.completeExceptionally(failure);
         }
-        consumer.accept(RowsBatchIterator.newInstance(row), null);
     }
 
     @Override
-    public List<CompletableFuture<Long>> executeBulk() {
-        throw new UnsupportedOperationException("ExplainTask cannot be executed as bulk operation");
+    public void kill(@Nullable Throwable throwable) {
+        // FIXME:
+        resultFuture.completeExceptionally(throwable);
     }
 }

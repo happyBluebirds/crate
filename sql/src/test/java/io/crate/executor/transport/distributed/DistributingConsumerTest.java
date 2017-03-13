@@ -41,7 +41,6 @@ import org.mockito.invocation.InvocationOnMock;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertThat;
@@ -91,8 +90,7 @@ public class DistributingConsumerTest {
             Collections.singletonList("n1"),
             distributedResultAction,
             streamers,
-            2, // pageSize
-            new CompletableFuture<>()
+            2 // pageSize
         );
 
         distributingConsumer.accept(TestingBatchIterators.range(0, 5), null);

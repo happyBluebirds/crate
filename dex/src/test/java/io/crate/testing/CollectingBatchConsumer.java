@@ -70,11 +70,19 @@ public class CollectingBatchConsumer implements BatchConsumer, Killable {
         }
     }
 
+    public Bucket getBucket() throws Exception {
+        return new CollectionBucket(getResult());
+    }
+
     @Override
     public void kill(@Nullable Throwable throwable) {
         if (throwable == null) {
             throwable = new InterruptedException("Operation aborted");
         }
         result.completeExceptionally(throwable);
+    }
+
+    public CompletableFuture<List<Object[]>> completionFuture() {
+        return result;
     }
 }
