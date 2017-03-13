@@ -21,14 +21,18 @@
 
 package io.crate.operation;
 
+import io.crate.data.BatchConsumer;
+import io.crate.data.CollectingBatchConsumer;
 import io.crate.data.Row;
 import io.crate.operation.projectors.*;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * RowDownstream that will set a TaskResultFuture once the result is ready.
@@ -78,5 +82,11 @@ public class RowCountResultRowDownstream implements RowReceiver {
     @Override
     public Set<Requirement> requirements() {
         return Requirements.NO_REQUIREMENTS;
+    }
+
+    @Nullable
+    @Override
+    public BatchConsumer asConsumer() {
+        return new CollectingBatchConsumer<>(Collectors.summingLong(r -> ((long) r.get(0))));
     }
 }
