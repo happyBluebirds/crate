@@ -536,7 +536,7 @@ public class ContextPreparer extends AbstractComponent {
                 collectOperation,
                 clusterService.state().nodes().getLocalNodeId(),
                 ramAccountingContext,
-                rowReceiver,
+                new BatchConsumerToRowReceiver(rowReceiver),
                 context.sharedShardContexts
             ));
             return true;
@@ -551,7 +551,7 @@ public class ContextPreparer extends AbstractComponent {
                 collectOperation,
                 clusterService.state().nodes().getLocalNodeId(),
                 ramAccountingContext,
-                rowReceiver,
+                new BatchConsumerToRowReceiver(rowReceiver),
                 context.sharedShardContexts
             ));
             return true;

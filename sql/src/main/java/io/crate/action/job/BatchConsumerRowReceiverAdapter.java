@@ -42,7 +42,7 @@ public class BatchConsumerRowReceiverAdapter implements RowReceiver {
     private final BatchConsumer batchConsumer;
     private final CompletableFuture<Void> completionFuture = new CompletableFuture<>();
 
-    BatchConsumerRowReceiverAdapter(BatchConsumer batchConsumer) {
+    public BatchConsumerRowReceiverAdapter(BatchConsumer batchConsumer) {
         this.batchConsumer = batchConsumer;
     }
 
