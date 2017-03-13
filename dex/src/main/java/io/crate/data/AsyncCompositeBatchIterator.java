@@ -28,22 +28,22 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 
 public class AsyncCompositeBatchIterator implements BatchIterator {
 
     private final BatchIterator[] iterators;
     private final CompositeColumns columns;
-    private final ExecutorService executorService;
+    private final Executor executor;
     private int idx = 0;
 
     private boolean loading = false;
 
-    public AsyncCompositeBatchIterator(ExecutorService executorService, BatchIterator... iterators) {
+    public AsyncCompositeBatchIterator(Executor executor, BatchIterator... iterators) {
         assert iterators.length > 0 : "Must have at least 1 iterator";
 
-        this.executorService = executorService;
+        this.executor = executor;
         this.iterators = iterators;
         this.columns = new CompositeColumns(iterators);
     }
@@ -110,7 +110,7 @@ public class AsyncCompositeBatchIterator implements BatchIterator {
             // Every "supplyAsync future" completes with the iterator::loadNextBatch() future, so in order to
             // access the loadNextBatch future, the asyncInvocation one should be completed and the result extracted
             CompletableFuture<CompletableFuture<?>> supplyAsyncFuture =
-                CompletableFuture.supplyAsync(loadNextBatchFuture, executorService);
+                CompletableFuture.supplyAsync(loadNextBatchFuture, executor);
             asyncInvocationFutures.add(supplyAsyncFuture);
         }
 

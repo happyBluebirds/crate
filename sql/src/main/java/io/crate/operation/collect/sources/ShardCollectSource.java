@@ -33,9 +33,7 @@ import io.crate.analyze.OrderBy;
 import io.crate.analyze.symbol.Symbols;
 import io.crate.blob.v2.BlobIndicesService;
 import io.crate.blob.v2.BlobShard;
-import io.crate.data.Buckets;
-import io.crate.data.Row;
-import io.crate.data.RowsBatchIterator;
+import io.crate.data.*;
 import io.crate.exceptions.UnhandledServerException;
 import io.crate.executor.transport.TransportActionProvider;
 import io.crate.lucene.LuceneQueryBuilder;
@@ -77,7 +75,6 @@ import org.elasticsearch.threadpool.ThreadPool;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
 
 import static io.crate.blob.v2.BlobIndex.isBlobIndex;
 
@@ -275,18 +272,23 @@ public class ShardCollectSource extends AbstractComponent implements CollectSour
             case 1:
                 CrateCollector.Builder collectorBuilder = builders.iterator().next();
                 return Collections.singletonList(collectorBuilder.build(
-                    new BatchConsumerToRowReceiver(collectorBuilder.applyProjections(firstNodeRR)), firstNodeRR));
+                    collectorBuilder.applyProjections(new BatchConsumerToRowReceiver(firstNodeRR)), firstNodeRR));
             default:
                 if (hasShardProjections) {
                     // 1 Collector per shard to benefit from concurrency (each collector is run in a thread)
                     // It doesn't support repeat.
 
-                    // TODO: handle projectors
-
-                    ThreadPoolExecutor threadPoolExecutor = (ThreadPoolExecutor) threadPool.generic();
-                    return Collections.singletonList(
-                        CompositeCollector.asyncCompositeCollector(
-                            builders, new BatchConsumerToRowReceiver(firstNodeRR), firstNodeRR, threadPoolExecutor));
+                    BatchConsumerToRowReceiver finalConsumer = new BatchConsumerToRowReceiver(firstNodeRR);
+                    BatchConsumer multiConsumer = CompositeCollector.newMultiConsumer(
+                        builders.size(),
+                        finalConsumer,
+                        iterators -> new AsyncCompositeBatchIterator(executor, iterators)
+                    );
+                    List<CrateCollector> collectors = new ArrayList<>(builders.size());
+                    for (CrateCollector.Builder builder : builders) {
+                        collectors.add(builder.build(builder.applyProjections(multiConsumer), firstNodeRR));
+                    }
+                    return collectors;
                 } else {
                     // If there are no shard-projections there is no real benefit from concurrency gained by using multiple collectors.
                     // CompositeCollector to collects single-threaded sequentially.
