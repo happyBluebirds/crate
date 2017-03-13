@@ -26,10 +26,10 @@ import com.carrotsearch.hppc.cursors.ObjectCursor;
 import com.google.common.annotations.VisibleForTesting;
 import io.crate.action.job.SharedShardContexts;
 import io.crate.breaker.RamAccountingContext;
+import io.crate.data.BatchConsumer;
 import io.crate.jobs.AbstractExecutionSubContext;
 import io.crate.metadata.RowGranularity;
 import io.crate.operation.projectors.RepeatHandle;
-import io.crate.operation.projectors.RowReceiver;
 import io.crate.planner.node.dql.CollectPhase;
 import io.crate.planner.node.dql.RoutedCollectPhase;
 import org.elasticsearch.common.StopWatch;
@@ -51,12 +51,12 @@ public class JobCollectContext extends AbstractExecutionSubContext {
     private final CollectPhase collectPhase;
     private final MapSideDataCollectOperation collectOperation;
     private final RamAccountingContext queryPhaseRamAccountingContext;
-    private final RowReceiver rowReceiver;
     private final SharedShardContexts sharedShardContexts;
 
     private final IntObjectHashMap<Engine.Searcher> searchers = new IntObjectHashMap<>();
     private final Object subContextLock = new Object();
     private final String threadPoolName;
+    private final BatchConsumer consumer;
 
     private Collection<CrateCollector> collectors;
 
@@ -64,14 +64,14 @@ public class JobCollectContext extends AbstractExecutionSubContext {
                              MapSideDataCollectOperation collectOperation,
                              String localNodeId,
                              RamAccountingContext queryPhaseRamAccountingContext,
-                             final RowReceiver rowReceiver,
+                             BatchConsumer consumer,
                              SharedShardContexts sharedShardContexts) {
         super(collectPhase.phaseId(), LOGGER);
         this.collectPhase = collectPhase;
         this.collectOperation = collectOperation;
         this.queryPhaseRamAccountingContext = queryPhaseRamAccountingContext;
         this.sharedShardContexts = sharedShardContexts;
-        this.rowReceiver = rowReceiver;
+        this.consumer = consumer;
         rowReceiver.completionFuture().whenComplete((result, ex) -> close(ex));
         this.threadPoolName = threadPoolName(collectPhase, localNodeId);
     }
