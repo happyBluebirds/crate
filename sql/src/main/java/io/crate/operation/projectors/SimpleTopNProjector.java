@@ -49,19 +49,17 @@ public class SimpleTopNProjector implements Projector {
     }
 
     @Override
-    public BatchIteratorProjector asProjector() {
-        return it -> {
-            if (it == null) {
-                return null;
-            }
-            if (remainingOffset > 0) {
-                it = new SkippingBatchIterator(it, remainingOffset);
-            }
-            return new RowTransformingBatchIterator(
-                    LimitingBatchIterator.newInstance(it, toCollect),
-                    inputs,
-                    collectExpressions
-            );
-        };
+    public BatchIterator apply(BatchIterator batchIterator) {
+        if (batchIterator == null) {
+            return null;
+        }
+        if (remainingOffset > 0) {
+            batchIterator = new SkippingBatchIterator(batchIterator, remainingOffset);
+        }
+        return new RowTransformingBatchIterator(
+            LimitingBatchIterator.newInstance(batchIterator, toCollect),
+            inputs,
+            collectExpressions
+        );
     }
 }
