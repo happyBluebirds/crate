@@ -28,7 +28,6 @@ import io.crate.collections.Lists2;
 import io.crate.metadata.*;
 import io.crate.metadata.sys.SysShardsTableInfo;
 import io.crate.operation.scalar.FormatFunction;
-import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import io.crate.types.IntegerType;
 import io.crate.types.StringType;
@@ -41,7 +40,7 @@ import java.util.*;
 
 public class WriterProjection extends Projection {
 
-    private static final List<Symbol> OUTPUTS = ImmutableList.<Symbol>of(
+    private static final List<Symbol> OUTPUTS = ImmutableList.of(
         new Value(DataTypes.LONG) // number of lines written
     );
 
@@ -51,10 +50,10 @@ public class WriterProjection extends Projection {
 
 
     public static final Symbol DIRECTORY_TO_FILENAME = new Function(new FunctionInfo(
-        new FunctionIdent(FormatFunction.NAME, Arrays.<DataType>asList(StringType.INSTANCE,
+        new FunctionIdent(FormatFunction.NAME, Arrays.asList(StringType.INSTANCE,
             StringType.INSTANCE, StringType.INSTANCE, StringType.INSTANCE)),
         StringType.INSTANCE),
-        Arrays.<Symbol>asList(Literal.of("%s_%s_%s.json"), TABLE_NAME_REF, SHARD_ID_REF, PARTITION_IDENT_REF)
+        Arrays.asList(Literal.of("%s_%s_%s.json"), TABLE_NAME_REF, SHARD_ID_REF, PARTITION_IDENT_REF)
     );
 
     private Symbol uri;

@@ -39,10 +39,7 @@ import io.crate.analyze.symbol.format.SymbolFormatter;
 import io.crate.exceptions.ColumnUnknownException;
 import io.crate.exceptions.ConversionException;
 import io.crate.exceptions.UnsupportedFeatureException;
-import io.crate.metadata.FunctionIdent;
-import io.crate.metadata.FunctionInfo;
-import io.crate.metadata.Functions;
-import io.crate.metadata.Reference;
+import io.crate.metadata.*;
 import io.crate.metadata.table.Operation;
 import io.crate.operation.aggregation.impl.CollectSetAggregation;
 import io.crate.operation.operator.*;
@@ -132,15 +129,15 @@ public class ExpressionAnalyzer {
     }
 
     public Symbol generateQuerySymbol(Optional<Expression> whereExpression, ExpressionAnalysisContext context) {
-        if (whereExpression.isPresent()) {
-            return convert(whereExpression.get(), context);
-        } else {
-            return Literal.BOOLEAN_TRUE;
-        }
+        return whereExpression.map(expression -> convert(expression, context)).orElse(Literal.BOOLEAN_TRUE);
     }
 
     private FunctionInfo getFunctionInfo(FunctionIdent ident) {
         return functions.getSafe(ident).info();
+    }
+
+    private FunctionInfo getFunctionInfo(String schema, String name, List<DataType> arguments) {
+        return functions.getSafe(schema, name, arguments).info();
     }
 
     protected Symbol convertFunctionCall(FunctionCall node, ExpressionAnalysisContext context) {
@@ -160,27 +157,30 @@ public class ExpressionAnalyzer {
                     "%s(DISTINCT x) does not accept more than one argument", node.getName()));
             }
             // define the inner function. use the arguments/argumentTypes from above
-            FunctionIdent innerIdent = new FunctionIdent(CollectSetAggregation.NAME, argumentTypes);
-            FunctionInfo innerInfo = getFunctionInfo(innerIdent);
+            FunctionInfo innerInfo = getFunctionInfo(Schemas.DEFAULT_SCHEMA_NAME, CollectSetAggregation.NAME, argumentTypes);
             Symbol innerFunction = context.allocateFunction(innerInfo, arguments);
 
             // define the outer function which contains the inner function as argument.
             String nodeName = "collection_" + node.getName().toString();
-            List<Symbol> outerArguments = Arrays.<Symbol>asList(innerFunction);
+            List<Symbol> outerArguments = Collections.singletonList(innerFunction);
             ImmutableList<DataType> outerArgumentTypes =
-                ImmutableList.<DataType>of(new SetType(argumentTypes.get(0)));
+                ImmutableList.of(new SetType(argumentTypes.get(0)));
 
-            FunctionIdent ident = new FunctionIdent(nodeName, outerArgumentTypes);
             try {
-                functionInfo = getFunctionInfo(ident);
+                functionInfo = getFunctionInfo(Schemas.DEFAULT_SCHEMA_NAME, nodeName, outerArgumentTypes);
             } catch (UnsupportedOperationException ex) {
                 throw new UnsupportedOperationException(String.format(Locale.ENGLISH,
                     "unknown function %s(DISTINCT %s)", node.getName(), argumentTypes.get(0)), ex);
             }
             arguments = outerArguments;
         } else {
-            FunctionIdent ident = new FunctionIdent(node.getName().toString(), argumentTypes);
-            functionInfo = getFunctionInfo(ident);
+            List<String> parts = node.getName().getParts();
+            assert parts.size() <= 2 : "the function must have the following format [schema.]name";
+            if (parts.size() == 1) {
+                functionInfo = getFunctionInfo(Schemas.DEFAULT_SCHEMA_NAME, parts.get(0), argumentTypes);
+            } else {
+                functionInfo = getFunctionInfo(parts.get(0), parts.get(1), argumentTypes);
+            }
         }
         return context.allocateFunction(functionInfo, arguments);
     }
@@ -416,8 +416,10 @@ public class ExpressionAnalyzer {
         protected Symbol visitIsNotNullPredicate(IsNotNullPredicate node, ExpressionAnalysisContext context) {
             Symbol argument = process(node.getValue(), context);
 
-            FunctionIdent isNullIdent =
-                new FunctionIdent(io.crate.operation.predicate.IsNullPredicate.NAME, ImmutableList.of(argument.valueType()));
+            FunctionIdent isNullIdent = new FunctionIdent(
+                io.crate.operation.predicate.IsNullPredicate.NAME,
+                ImmutableList.of(argument.valueType())
+            );
             FunctionInfo isNullInfo = getFunctionInfo(isNullIdent);
 
             return context.allocateFunction(
@@ -442,7 +444,7 @@ public class ExpressionAnalyzer {
                 subscriptSymbol = subscriptExpression.accept(this, context);
             } else {
                 throw new UnsupportedOperationException("Only references, function calls or array literals " +
-                                                        "are valid subscript symbols");
+                    "are valid subscript symbols");
             }
             assert subscriptSymbol != null : "subscriptSymbol must not be null";
             Expression index = subscriptContext.index();
@@ -564,7 +566,7 @@ public class ExpressionAnalyzer {
             Symbol expression = process(node.getValue(), context);
             expression = castIfNeededOrFail(expression, DataTypes.STRING);
             Symbol pattern = castIfNeededOrFail(process(node.getPattern(), context), DataTypes.STRING);
-            FunctionIdent functionIdent = FunctionIdent.of(LikeOperator.NAME, expression.valueType(), pattern.valueType());
+            FunctionIdent functionIdent = new FunctionIdent(LikeOperator.NAME, ImmutableList.of(expression.valueType(), pattern.valueType()));
             return context.allocateFunction(getFunctionInfo(functionIdent), Arrays.asList(expression, pattern));
         }
 
