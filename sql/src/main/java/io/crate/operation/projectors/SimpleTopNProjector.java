@@ -28,8 +28,10 @@ import io.crate.operation.collect.CollectExpression;
 
 import java.util.List;
 
-public class SimpleTopNProjector extends InputRowProjector {
+public class SimpleTopNProjector implements Projector {
 
+    private final List<Input<?>> inputs;
+    private final Iterable<? extends CollectExpression<Row, ?>> collectExpressions;
     private int remainingOffset;
     private int toCollect;
 
@@ -37,35 +39,13 @@ public class SimpleTopNProjector extends InputRowProjector {
                                Iterable<? extends CollectExpression<Row, ?>> collectExpressions,
                                int limit,
                                int offset) {
-        super(inputs, collectExpressions);
-
         Preconditions.checkArgument(limit >= 0, "invalid limit: " + limit);
         Preconditions.checkArgument(offset >= 0, "invalid offset: " + offset);
+
+        this.inputs = inputs;
+        this.collectExpressions = collectExpressions;
         this.remainingOffset = offset;
         this.toCollect = limit;
-    }
-
-    @Override
-    public Result setNextRow(Row row) {
-        if (toCollect < 1) {
-            return Result.STOP;
-        }
-        if (remainingOffset > 0) {
-            remainingOffset--;
-            return Result.CONTINUE;
-        }
-        toCollect--;
-        Result result = super.setNextRow(row);
-        switch (result) {
-            case PAUSE:
-                return result;
-            case CONTINUE:
-                return toCollect < 1 ? Result.STOP : Result.CONTINUE;
-            case STOP:
-                toCollect = -1;
-                return Result.STOP;
-        }
-        throw new AssertionError("Unrecognized setNextRow result: " + result);
     }
 
     @Override
