@@ -29,9 +29,7 @@ import io.crate.analyze.symbol.Symbol;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.data.ArrayBucket;
 import io.crate.data.Row;
-import io.crate.metadata.FunctionIdent;
-import io.crate.metadata.Functions;
-import io.crate.metadata.TransactionContext;
+import io.crate.metadata.*;
 import io.crate.operation.collect.InputCollectExpression;
 import io.crate.test.integration.CrateUnitTest;
 import io.crate.types.DataType;
@@ -58,13 +56,14 @@ public abstract class AggregationTest extends CrateUnitTest {
 
     public Object[][] executeAggregation(String name, DataType dataType, Object[][] data) throws Exception {
         if (dataType == null) {
-            return executeAggregation(name, dataType, data, ImmutableList.<DataType>of());
+            return executeAggregation(name, dataType, data, ImmutableList.of());
         } else {
             return executeAggregation(name, dataType, data, ImmutableList.of(dataType));
         }
     }
 
-    public Object[][] executeAggregation(String name, DataType dataType, Object[][] data, List<DataType> argumentTypes) throws Exception {
+    public Object[][] executeAggregation(String name, DataType dataType, Object[][] data, List<DataType> argumentTypes)
+        throws Exception {
         FunctionIdent fi;
         InputCollectExpression[] inputs;
         if (dataType != null) {
@@ -77,7 +76,7 @@ public abstract class AggregationTest extends CrateUnitTest {
             fi = new FunctionIdent(name, ImmutableList.<DataType>of());
             inputs = new InputCollectExpression[0];
         }
-        AggregationFunction impl = (AggregationFunction) functions.get(fi);
+        AggregationFunction impl = (AggregationFunction) functions.get(fi.schema(), fi.name(), fi.argumentTypes());
         Object state = impl.newState(ramAccountingContext);
 
         ArrayBucket bucket = new ArrayBucket(data);
@@ -102,8 +101,12 @@ public abstract class AggregationTest extends CrateUnitTest {
         for (int i = 0; i < args.length; i++) {
             argTypes[i] = args[i].valueType();
         }
-        AggregationFunction function =
-            (AggregationFunction) functions.get(new FunctionIdent(functionName, Arrays.asList(argTypes)));
-        return function.normalizeSymbol(new Function(function.info(), Arrays.asList(args)), new TransactionContext(SessionContext.SYSTEM_SESSION));
+        AggregationFunction function = (AggregationFunction) getFunction(functionName, Arrays.asList(argTypes));
+        return function.normalizeSymbol(
+            new Function(function.info(), Arrays.asList(args)), new TransactionContext(SessionContext.SYSTEM_SESSION));
+    }
+
+    protected FunctionImplementation getFunction(String name, List<DataType> args) {
+        return functions.get(Schemas.DEFAULT_SCHEMA_NAME, name, args);
     }
 }

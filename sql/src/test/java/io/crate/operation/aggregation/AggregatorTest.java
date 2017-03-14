@@ -25,19 +25,17 @@ import io.crate.analyze.symbol.Aggregation;
 import io.crate.analyze.symbol.InputColumn;
 import io.crate.analyze.symbol.Symbol;
 import io.crate.breaker.RamAccountingContext;
-import io.crate.metadata.FunctionIdent;
-import io.crate.metadata.Functions;
 import io.crate.data.Input;
+import io.crate.metadata.Functions;
+import io.crate.metadata.Schemas;
 import io.crate.operation.aggregation.impl.CountAggregation;
 import io.crate.test.integration.CrateUnitTest;
-import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import org.elasticsearch.common.breaker.CircuitBreaker;
 import org.elasticsearch.common.breaker.NoopCircuitBreaker;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.Arrays;
 import java.util.Collections;
 
 import static io.crate.testing.TestingHelpers.getFunctions;
@@ -53,8 +51,8 @@ public class AggregatorTest extends CrateUnitTest {
     @Before
     public void setUpFunctions() {
         Functions functions = getFunctions();
-        FunctionIdent countAggIdent = new FunctionIdent(CountAggregation.NAME, Arrays.<DataType>asList(DataTypes.STRING));
-        countImpl = (AggregationFunction) functions.get(countAggIdent);
+        countImpl = (AggregationFunction)
+            functions.get(Schemas.DEFAULT_SCHEMA_NAME, CountAggregation.NAME, Collections.singletonList(DataTypes.STRING));
     }
 
     @Test

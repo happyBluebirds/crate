@@ -21,8 +21,7 @@
 
 package io.crate.operation.scalar;
 
-import io.crate.metadata.FunctionIdent;
-import io.crate.types.DataType;
+import io.crate.metadata.Schemas;
 import io.crate.types.DataTypes;
 import io.crate.types.SetType;
 import org.junit.Test;
@@ -54,9 +53,11 @@ public class SubscriptFunctionTest extends AbstractScalarFunctionsTest {
     public void testNotRegisteredForSets() throws Exception {
         expectedException.expect(UnsupportedOperationException.class);
         expectedException.expectMessage("unknown function: subscript(integer_set, integer)");
-        FunctionIdent functionIdent = new FunctionIdent(SubscriptFunction.NAME,
-            Arrays.<DataType>asList(new SetType(DataTypes.INTEGER), DataTypes.INTEGER));
-        functions.getSafe(functionIdent);
+        functions.getSafe(
+            Schemas.DEFAULT_SCHEMA_NAME,
+            SubscriptFunction.NAME,
+            Arrays.asList(new SetType(DataTypes.INTEGER), DataTypes.INTEGER)
+        );
     }
 
     @Test

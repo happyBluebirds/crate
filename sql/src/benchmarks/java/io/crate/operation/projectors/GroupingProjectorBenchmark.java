@@ -24,14 +24,13 @@ package io.crate.operation.projectors;
 import com.carrotsearch.junitbenchmarks.BenchmarkRule;
 import io.crate.analyze.symbol.Aggregation;
 import io.crate.analyze.symbol.InputColumn;
-import io.crate.analyze.symbol.Symbol;
 import io.crate.breaker.RamAccountingContext;
+import io.crate.data.Input;
 import io.crate.data.Row;
 import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.Functions;
 import io.crate.operation.AggregationContext;
-import io.crate.data.Input;
 import io.crate.operation.aggregation.AggregationFunction;
 import io.crate.operation.aggregation.impl.AggregationImplModule;
 import io.crate.operation.aggregation.impl.MinimumAggregation;
@@ -39,7 +38,6 @@ import io.crate.operation.aggregation.impl.SumAggregation;
 import io.crate.operation.collect.CollectExpression;
 import io.crate.operation.collect.InputCollectExpression;
 import io.crate.testing.RowCountRowReceiver;
-import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.common.breaker.CircuitBreaker;
@@ -87,20 +85,21 @@ public class GroupingProjectorBenchmark {
             .createInjector().getInstance(Functions.class);
 
         InputCollectExpression keyInput = new InputCollectExpression(0);
-        List<Input<?>> keyInputs = Arrays.<Input<?>>asList(keyInput);
+        List<Input<?>> keyInputs = Arrays.asList(keyInput);
         CollectExpression[] collectExpressions = new CollectExpression[]{keyInput};
 
         FunctionIdent minStringFuncIdent = new FunctionIdent(MinimumAggregation.NAME,
-            Arrays.<DataType>asList(DataTypes.STRING));
+            Arrays.asList(DataTypes.STRING));
         FunctionInfo minStringFuncInfo = new FunctionInfo(minStringFuncIdent, DataTypes.STRING, FunctionInfo.Type.AGGREGATE);
-        AggregationFunction minAgg = (AggregationFunction) functions.get(minStringFuncIdent);
+        AggregationFunction minAgg = (AggregationFunction) functions
+            .get(minStringFuncIdent.schema(), minStringFuncIdent.name(), minStringFuncIdent.argumentTypes());
         Aggregation aggregation = Aggregation.finalAggregation(minStringFuncInfo,
-            Arrays.<Symbol>asList(new InputColumn(0)), Aggregation.Step.ITER);
+            Arrays.asList(new InputColumn(0)), Aggregation.Step.ITER);
         AggregationContext aggregationContext = new AggregationContext(minAgg, aggregation);
         aggregationContext.addInput(keyInput);
         AggregationContext[] aggregations = new AggregationContext[]{aggregationContext};
         GroupingProjector groupingProjector = new GroupingProjector(
-            Arrays.<DataType>asList(DataTypes.STRING), keyInputs, collectExpressions, aggregations, RAM_ACCOUNTING_CONTEXT);
+            Arrays.asList(DataTypes.STRING), keyInputs, collectExpressions, aggregations, RAM_ACCOUNTING_CONTEXT);
         RowReceiver finalReceiver = new RowCountRowReceiver();
         groupingProjector.downstream(finalReceiver);
 
@@ -125,20 +124,21 @@ public class GroupingProjectorBenchmark {
             .createInjector().getInstance(Functions.class);
 
         InputCollectExpression keyInput = new InputCollectExpression(0);
-        List<Input<?>> keyInputs = Arrays.<Input<?>>asList(keyInput);
+        List<Input<?>> keyInputs = Arrays.asList(keyInput);
         CollectExpression[] collectExpressions = new CollectExpression[]{keyInput};
 
         FunctionIdent functionIdent = new FunctionIdent(SumAggregation.NAME,
-            Arrays.<DataType>asList(DataTypes.INTEGER));
+            Arrays.asList(DataTypes.INTEGER));
         FunctionInfo functionInfo = new FunctionInfo(functionIdent, DataTypes.INTEGER, FunctionInfo.Type.AGGREGATE);
-        AggregationFunction minAgg = (AggregationFunction) functions.get(functionIdent);
+        AggregationFunction minAgg = (AggregationFunction)
+            functions.get(functionIdent.schema(), functionIdent.name(), functionIdent.argumentTypes());
         Aggregation aggregation = Aggregation.finalAggregation(functionInfo,
-            Arrays.<Symbol>asList(new InputColumn(0)), Aggregation.Step.ITER);
+            Arrays.asList(new InputColumn(0)), Aggregation.Step.ITER);
         AggregationContext aggregationContext = new AggregationContext(minAgg, aggregation);
         aggregationContext.addInput(keyInput);
         AggregationContext[] aggregations = new AggregationContext[]{aggregationContext};
         GroupingProjector groupingProjector = new GroupingProjector(
-            Arrays.<DataType>asList(DataTypes.INTEGER), keyInputs, collectExpressions, aggregations, RAM_ACCOUNTING_CONTEXT);
+            Arrays.asList(DataTypes.INTEGER), keyInputs, collectExpressions, aggregations, RAM_ACCOUNTING_CONTEXT);
         RowReceiver finalReceiver = new RowCountRowReceiver();
         groupingProjector.downstream(finalReceiver);
 

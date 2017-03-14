@@ -21,9 +21,8 @@
 
 package io.crate.operation.scalar.arithmetic;
 
-import io.crate.metadata.FunctionIdent;
+import io.crate.metadata.Schemas;
 import io.crate.operation.scalar.AbstractScalarFunctionsTest;
-import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import org.junit.Test;
 
@@ -33,7 +32,6 @@ public class AddFunctionTest extends AbstractScalarFunctionsTest {
 
     @Test
     public void testTimestampTypeValidation() throws Exception {
-        functions.get(new FunctionIdent(AddFunction.NAME,
-            Arrays.<DataType>asList(DataTypes.TIMESTAMP, DataTypes.TIMESTAMP)));
+        functions.get(Schemas.DEFAULT_SCHEMA_NAME, AddFunction.NAME, Arrays.asList(DataTypes.TIMESTAMP, DataTypes.TIMESTAMP));
     }
 }
